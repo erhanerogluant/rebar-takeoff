@@ -1,0 +1,188 @@
+# Cursor AI Rules File
+
+
+-Gerekli tüm kütüphaneleri ekle ve gerekli tüm kütüphanelerin eklendiğinden emin ol
+-İstediğim değişiklikleri yaparken, olabildiğince mevcut kod yapısını bozmadan yapmaya çalış.
+
+# Performans Kuralları
+- Optimize edilmiş veri yapıları kullanılmalı.
+- Gereksiz hesaplamalardan kaçınılmalı.
+- Algoritmaların zaman ve bellek karmaşıklıkları minimize edilmeli.
+
+# Optimizasyon
+- Gereksiz tekrar eden kod blokları kaldırılmalı.
+- Mümkün olduğunda vektörleştirilmiş işlemler tercih edilmeli.
+- Cache mekanizmaları kullanılmalı.
+
+# UI/UX Kuralları
+- Kullanıcı dostu arayüz tasarlanmalı.
+- Minimum tıklama ile maksimum işlem yapılabilmeli.
+- Hata mesajları ve geri bildirim mekanizmaları bulunmalı.
+
+# Kod Uygulama Kuralları
+- SOLID prensiplerine uyulmalı.
+- Fonksiyonlar ve sınıflar tek bir sorumluluğa sahip olmalı.
+- Kod okunabilirliği için açıklayıcı değişken isimleri kullanılmalı.
+
+# State Management
+- Arayüz ve hesaplama modülleri arasında net bir veri akışı olmalı.
+- Global değişken kullanımı minimuma indirilmeli.
+- Gerekli durumlarda Observer veya benzeri desenler uygulanmalı.
+
+# Kod Organizasyonu
+- Mevcut dosya yapısı korunmalı, gereksiz yeni dosya eklenmemeli.
+- Modüler ve yeniden kullanılabilir kod yazılmalı.
+- Dosya isimlendirmeleri anlamlı olmalı.
+
+# Build ve Deployment
+- PyInstaller veya alternatif bir araç ile çalıştırılabilir dosya oluşturulmalı.
+- Platform bağımsızlık gözetilmeli.
+- Hata ayıklama ve loglama mekanizmaları dahil edilmeli.
+
+
+AutoCAD Entegrasyonu Kuralları
+pyautocad, comtypes ve ezdxf gibi kütüphaneler kullanılmalı.
+AutoCAD komutları acad.doc.SendCommand() ile çağrılmalı.
+
+
+AutoCAD çizim birimleri kontrol edilmeli ve uygun birime çevrilmeli (mm, cm, m).
+
+
+Rebar (demir donatı) elemanlarının çakışma kontrolü yapılmalı.
+Metraj raporları belirli bir formatta (.txt) oluşturulmalı.
+Performans ve Optimizasyon
+UI donmasını önlemek için ağır işlemler QThread ile çalıştırılmalı.
+Çok büyük veri setlerinde numpy ve pandas kullanılmalı.
+Bellek sızıntıları (memory leak) olmaması için nesneler gerektiğinde serbest bırakılmalı.
+Kod Organizasyonu ve UI/UX
+PyQt6 arayüzü responsive olmalı, QGridLayout ve QVBoxLayout gibi düzenler tercih edilmeli.
+Kullanıcı işlemleri sırasında progress bar veya status bar gösterilmeli.
+Hata mesajları ve logging mekanizması (logging modülü) etkin olmalı.
+Build & Deployment
+PyInstaller ile bağımsız çalıştırılabilir dosya oluşturulmalı.
+Güncellemeleri kontrol eden bir mekanizma entegre edilmeli.
+
+
+
+
+Q TiPi HASIRLAR							
+HASIR	HASIR EBADI	GOZ ou:;OLERI	AP	BOY	EN	HASIR	
+TIPI	Boy I En	Boy I En	Boy I En	FILIZLERI	FILIZLERI	AGIRLIGI	Kg / m2
+	(cm)	(mm)	(mm)	(mm)	(mm)	(kg)	
+Q106 / 106	500  /  215	150  / 150	4.5  /  4.5	100  / 100	25  /  175	17,62	166
+Q131 / 131	500  /  215	150  / 150	5.0  /  5.0	100  / 100	25  /  175	21,70	206
+Q158 / 158	500  /  215	150  / 150	5.5  /  5.5	100  / 100	25  /  175	26,36	249
+Q188 / 188	500  /  215	150  / 150	6.0  /  6.0	100  / 100	25  /  175	31,29	296
+Q221 / 221	500  /  215	150  / 150	6.5  /  6.5	100  / 100	25  /  175	36,65	347
+Q257 / 257	500  /  215	150  / 150	7.0  /  7.0	100  / 100	25  /  175	42,57	403
+Q257 / 188	500  /  215	150  / 150	7.0  /  6.0	100  / 100	25  /  175	36,89	349
+Q295 / 295	500  /  215	150  / 150	7.5  /  7.5	100  / 100	25  /  175	48,91	462
+Q295 / 257	500  /  215	150  / 150	7.5  /  7.0	100  / 100	25  /  175	45,72	433
+Q295 / 221	500  /  215	150  / 150	7.5  /  6.5	100  / 100	25  /  175	42,73	404
+Q295 / 188	500  /  215	150  / 150	7.5  /  6.0	100  / 100	25  /  175	40,04	379
+Q295 / 158	500  /  215	150  / 150	7.5  /  5.5	100  / 100	25  /  175	37,55	356
+Q317 / 317	500  /  215	150  / 150	7.8 17.8	100  / 100	25  /  175	52,86	500
+Q317 / 295	500  /  215	150  / 150	7.8  /  7.5	100  / 100	25  /  175	50,80	481
+Q317 / 257	500  /  215	150  / 150	7.817.0	100  /  100	25  /  175	47,61	452
+Q317 / 221	500  /  215	150  / 150	7.8  /  6.5	100  / 100	25  /  175	44,63	424
+Q317 / 188	500  /  215	150  / 150	8.0  /  6.0	100  / 100	25  /  175	42,00	398
+Q335 / 335	500  /  215	150  / 150	8.0  /  8.0	100  / 100	25  /  175	55,68	526
+Q335 / 317	500  /  215	150  / 150	8.0 17.8	100  / 100	25  /  175	54,18	513
+Q335 / 295	500  /  215	150  / 150	8.0  / 7.5	100  / 100	25  /  175	52,27	494
+Q335 / 257	500  /  215	150  / 150	8.0 17.0	100  / 100	25  /  175	49,08	464
+Q335 / 221	500  /  215	150  / 150	8.0  /  6.5	100  / 100	25  /  175	46,09	437
+Q335 / 188	500  /  215	150  / 150	8.0  /  6.0	100  / 100	25  /  175	43,40	411
+							
+Q377 / 377	500  /  215	150  / 150	8.5  /  8.5	100  / 100	25  /  175	62,72	594
+Q377 / 335	500  /  215	150  / 150	8.5  /  8.0	100  / 100	25  /  175	59,17	560
+Q377 / 317	500  /  215	150  / 150	8.5  /  7.8	100  / 100	25  /  175	57,69	547
+Q377 / 295	500  /  215	150  / 150	8.5  /  7.5	100  / 100	25  /  175	55,77	528
+Q377 / 257	500  /  215	150  / 150	8.5  /  7.0	100  / 100	25  /  175	52,58	498
+Q377 / 221	500  /  215	150  / 150	8.5  /  6.5	100  / 100	25  /  175	49,60	471
+Q377 / 188	500  /  215	150  / 150	8.5  /  6.0	100  / 100	25  /  175	46,90	445
+Q424 / 424	500  /  215	150  / 150	9.0  /  9.0	100  / 100	25  /  175	70,33	666
+Q424 / 377	500  /  215	150  / 150	9.0  /  8.5	100  / 100	25  /  175	66,50	630
+Q424 / 335	500  /  215	150  / 150	9.0  /  8.0	100  / 100	25  /  175	62,96	596
+Q424 / 317	500  /  215	150  / 150	9.0  /  7.8	100  / 100	25  /  175	61,47	598
+Q424 / 295	500  /  215	150  / 150	9.0  /  7.5	100  / 100	25  /  175	59,55	564
+0424 / 257	500  /  215	150  / 150	9.0  /  7.0	100  / 100	25  /  175	56,36	534
+Q424 / 221	500  /  215	150  / 150	9.0  /  6.5	100  / 100	25  /  175	53,38	507
+Q443 / 443	500  /  215	150  / 150	9.2  /  9.2	100  / 100	25  /  175	73,58	696
+Q443 / 377	500  /  215	150  / 150	9.2  /  8.5	100  / 100	25  /  175	67,97	645
+Q443 / 335	500  /  215	150  / 150	9.2  /  8.0	100  / 100	25  /  175	64,42	611
+Q443 / 317	500  /  215	150  / 150	9.2  /  7.8	100  / 100	25  /  175	62,94	598
+Q443 / 295	500  /  215	150  / 150	9.2  /  7.5	100  / 100	25  /  175	61,02	579
+Q443 / 257	500  /  215	150  / 150	9.2  /  7.0	100  / 100	25  /  175	57,83	549
+Q443 / 221	500  /  215	150  / 150	9.2  /  6.5	100  / 100	25  /  175	54,99	522
+Q473 / 473	500  /  215	150  / 150	9.5  /  9.5	100  / 100	25  /  175	78,37	742
+Q503 / 503	500  /  215	100  / 100	8.0  /  8.0	100  / 100	25  /  125	83,09	789
+Q513 / 513	500  /  215	100  / 100	8.1 /  8.1	100  / 100	25  /  125	85,20	809
+Q513 / 257	500  /  215	100  / 150	8.1 /  7.0	100  / 100	25  /  125	63,96	606
+Q524 / 524	500  /  215	150  / 150	10.0  /  10.0	100  / 100	25  /  175	86,97	822
+Q524 / 443	500  /  215	150  /  150	10.0  /  9.2	100  / 100	25  /  175	80,08	759
+Q524 / 424	500  /  215	150  / 150	10.0  /  9.0	100  / 100	25  /  175	78,60	744
+Q524 / 377	500  /  215	150  / 150	10.0  /  8.5	100  /  100	25  /  175	74,76	708
+Q524 / 335	500  /  215	150  / 150	10.0  /  8.0	100  / 100	25  /  175	71,21	674
+Q524 / 317	500  /  215	150  / 150	10.0  / 7 .8	100  / 100	25  /  175	69,72	661
+Q524 / 295	500  /  215	150  / 150	10.0  /  7.5	100  / 100	25  /  175	67,81	642
+Q524 / 257	500  /  215	150  / 150	10.017.0	100  / 100	25  /  175	64,62	612
+Q589 / 589	500  /  215	150  / 150	10.6  /  10.6	100  / 100	25  /  175	97,53	924
+Q589 / 589	500  /  215	100  / 100	8.7 18.7	100  / 100	25  /  125	9.824	933
+Q589 / 503	500  /  215	100  / 100	8.7 18.0	100  / 100	25  /  125	90,65	861
+Q589 / 378	500  /  215	100  / 150	8.7 18.5	100  / 100	25  /  125	80,61	764
+Q589 / 335	500  /  215	100  / 150	8.7  /  8.0	100  / 100	25  /  125	76,96	730
+Q589 / 317	500  /  215	100  / 150	8.7 17.8	100  / 100	25  /  125	75,47	717
+Q589 / 295	500  /  215	100  / 150	8.7 17.5	100  / 100	25  /  125	73,66	698
+Q634 / 634	500  /  215	150  / 150	11.0  /  11.0	100  / 100	25  /  175	105,15	995
+Q636 / 636	500  /  215	100  / 100	9.0  /  9.0	100  / 100	25  /  125	104,96	999
+Q636 / 424	500  /  215	100  / 150	9.0  /  9.0	100  / 100	25  /  125	87,80	832
+Q709 / 424	500  /  215	100  / 150	9.5  /  9.0	100  / 100	25  /  125	93,78	889
+Q754 / 754	500  /  215	150  / 150	12.0  /  12.0	100  / 100	25  /  175	125,16	1.184
+Q785 / 785	500  /  215	100  / 100	10.0  / 10.0	100  / 100	25  /  125	129,79	1.233
+Q785 / 295	500  /  215	100  / 150	10.0  /  7.5	100  / 100	25  /  125	89,40	848
+Q785 / 257	500  /  215	100  / 150	10.0  /  7.0	100  / 100	25  /  125	86,21	818
+Q950 / 950	500  /  215	100  / 100	11.0  /  11.0	100  / 100	25  /  125	156,92	1.492
+01131 / 1131	500  /  215	100  / 100	12.0  /  12.0	100  / 100	25  /  125	186,78	1.776
+
+
+ayrıca 
+
+"Hasır Tipi
+R"	"Çubuk Aralığı (mm)
+Boy/En"	"Çubuk Çapı (mm)
+Boy / En"	"Hasır Kesit Alanı (cm2/m)
+Boy / En"							"Hasır Birim Ağırlığı
+kg/m2"	
+R106	150 / 250	4.5 / 4.5	1.06 / 0.64							1,33	
+R131	150 / 250	5.0 / 5.0	1.31 / 0.78							1,65	
+R158	150 / 250	5.5 / 5.0	1.58 / 0.78							1,86	
+R188	150 / 250	6.0 / 5.0	1.88 / 0.78							2,1	
+R221	150 / 250	6.5 / 5.0	2.21 0.78							2,36	
+R257	150 / 250	7.0 / 5.0	2.57 / 0.78							2,63	
+R295	150 / 250	7.5 / 5.0	2.95 / 0.78							2,93	
+R317	150 / 250	5.5d / 5.0	3.17 / 0.78							3,11	
+R335	150 / 250	8.0 / 5.0	3.35 / 0.78							3,25	
+R377	150 / 250	6.0d / 5.0	3.77 / 0.78							3,58	
+R443	150 / 250	6.5d / 5.5	4.43 / 0.95							4,22	
+R513	150 / 250	7.0d / 6.0	5.13 1.13							4,92	
+R589	150 / 250	7.5d / 6.5	5.89 / 1.33							5,66	
+											
+											
+											
+TR Hasırın		Hasır çubuklarının								Ağırlık	
+Tipi	Boyu/eni	Aralığı		Çapı		Çıkıntısı		Kesit alanı			
+		Boy	En	Boy	En	Boy	En	Boy	En	m2	Hasır
+	m	mm						cm2/m		kg	
+TR131	5,00/2,15	300	150	5	5	125/125	25/25	0,65	1,31	1,59	17,09
+TR158	5,00/2,15	300	150	5	5,5	125/125	25/25	0,65	1,58	1,81	19,43
+TR188	5,00/2,15	300	150	5	6	125/125	25/25	0,65	1,88	2,04	21,91
+TR221	5,00/2,15	300	150	5	6,5	125/125	25/25	0,65	2,21	2,29	24,61
+TR257	5,00/2,15	300	150	5	7	125/125	25/25	0,65	2,57	2,57	27,59
+TR295	5,00/2,15	300	150	5	7,5	125/125	25/25	0,65	2,95	2,86	30,78
+TR317	5,00/2,15	300	150	5	7,8	125/125	25/25	0,65	3,17	3,04	32,7
+TR335	5,00/2,15	300	150	5	8	125/125	25/25	0,65	3,35	3,18	34,19
+TR377	5,00/2,15	300	150	5	8,5	125/125	25/25	0,65	3,77	3,51	37,73
+TR443	5,00/2,15	300	150	5,5	9,19	125/125	25/25	0,78	4,43	4,13	44,44
+TR513	5,00/2,15	300	150	6	9,89	125/125	25/25	0,94	5,13	4,81	51,73
+TR524	5,00/2,15	300	150	6	10	125/125	25/25	0,94	5,24	4,9	52,66
+TR589	5,00/2,15	300	150	6,5	10,6	125/125	25/25	1,11	5,89	5,54	59,57

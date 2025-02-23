@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+logs/
+*.log
+metraj_raporlari*/
+demir_metraji.*
+build/
+dist/
+*.spec
