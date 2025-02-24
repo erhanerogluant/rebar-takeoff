@@ -6,9 +6,11 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QShortcut
 import sys
 from autocad_integration import AutoCADIntegration
+from rebar_calculator import RebarData
 import os
 from datetime import datetime
 import logging
+import re
 
 class SelectionThread(QThread):
     finished = pyqtSignal()
@@ -253,25 +255,95 @@ class RebarCalculatorGUI(QMainWindow):
         report_action.triggered.connect(self.generate_report)
         
     def start_rebar_selection(self):
+        """Boy demiri seçim işlemini yönet"""
         self.is_operation_running = True
         self.current_operation = 'REBAR'
         self.btn_stop.setEnabled(True)
         self.statusBar.showMessage("Boy demiri seçimi başlatıldı...")
+        
         try:
-            while True:
-                text = self.acad.select_entity("Boy demiri seçin veya çıkmak için ESC")
-                if not text:
-                    break
-                
-                # Hesaplama ve sonuç ekleme
-                if self.acad.calculator.process_text(text):
-                    self.add_result_to_tree("Boy Demiri", text)
-                    
+            # 1. Boy demiri text seçimi
+            rebar_text = self.acad.select_entity("Boy demiri textini seçin (örn: 2X13∅20)")
+            if not rebar_text:
+                return
+            
+            # Çap ve adet bilgilerini çıkar
+            pattern = r'(\d+)X(\d+)[ƒØ∅](\d+)|(\d+)X(\d+)%%C(\d+)'
+            match = re.search(pattern, rebar_text)
+            
+            if not match:
+                print("Geçersiz boy demiri formatı!")
+                return
+            
+            # Grupları kontrol et ve değerleri al
+            groups = match.groups()
+            if groups[0]:  # İlk format (ƒØ∅)
+                count = int(groups[0]) * int(groups[1])
+                diameter = float(groups[2])
+            else:  # İkinci format (%%C)
+                count = int(groups[3]) * int(groups[4])
+                diameter = float(groups[5])
+            
+            print("\nBoy Demiri Bilgileri:")
+            print(f"- Çap: Ø{diameter}")
+            print(f"- Adet: {count}")
+            
+            # 2. Boy uzunluğu seçimi
+            length_text = self.acad.select_entity("Boy uzunluğunu seçin (örn: L=397)")
+            if not length_text:
+                return
+            
+            length_match = re.search(r'[Ll]\s*=\s*(\d+)', length_text)
+            if not length_match:
+                print("Geçersiz boy formatı!")
+                return
+            
+            length = float(length_match.group(1))
+            print(f"- Boy: {length} cm")
+            
+            # Hesaplamaları yap
+            print("\nHESAPLAMA SONUÇLARI:")
+            print("--------------------")
+            
+            # 1. Toplam boy hesabı
+            total_length = length * count
+            print(f"1. Toplam boy: {total_length} cm = {total_length/100:.2f} m")
+            print(f"   {length} cm × {count} adet = {total_length} cm")
+            
+            # 2. Ağırlık hesabı
+            weight_per_meter = self.acad.calculator.weight_table.get(diameter, 0)
+            total_weight = (total_length / 100) * weight_per_meter
+            print(f"2. Toplam ağırlık: {total_weight:.2f} kg")
+            print(f"   {total_length/100:.2f} m × {weight_per_meter:.3f} kg/m = {total_weight:.2f} kg")
+            
+            # Sonucu kaydet
+            result = RebarData(
+                type='REBAR',
+                diameter=diameter,
+                count=count,
+                length=length,
+                total_length=total_length,
+                weight_per_meter=weight_per_meter,
+                total_weight=total_weight,
+                description=f"{count}×Ø{diameter} L={length}",
+                spacing=None  # Boy demiri için spacing None olabilir
+            )
+            
+            self.acad.calculator.results.append(result)
+            print("\nHesaplama başarıyla kaydedildi!")
+            
+            # GUI'yi güncelle
+            self.add_result_to_tree("Boy Demiri", f"{count}×Ø{diameter} L={length}")
             self.update_summary()
+            self.statusBar.showMessage("Boy demiri hesabı tamamlandı!")
+            
+            # Metraj raporunu kaydet
+            self.save_metraj_report()
             
         except Exception as e:
-            QMessageBox.warning(self, "Hata", str(e))
-            
+            print(f"\nHata oluştu: {str(e)}")
+            self.statusBar.showMessage("Hata oluştu!")
+
     def add_result_to_tree(self, type_name, details):
         """Sonucu ağaca ekle"""
         try:
@@ -301,12 +373,13 @@ class RebarCalculatorGUI(QMainWindow):
                 self.result_tree.scrollToItem(item)
                 self.result_tree.setCurrentItem(item)
                 
-                # Log alanını güncelle
+                # Log alanını güncelle (pop-up olmadan)
                 self.log_text.append(f"\nYeni hesaplama eklendi: {type_name} - {details} - {weight:.2f} kg")
             
         except Exception as e:
             print(f"Ağaca ekleme hatası: {str(e)}")
-            QMessageBox.warning(self, "Hata", f"Sonuç ağaca eklenirken hata oluştu: {str(e)}")
+            # Pop-up mesajını kaldırdık
+            # QMessageBox.warning(self, "Hata", f"Sonuç ağaca eklenirken hata oluştu: {str(e)}")
             
     def update_summary(self):
         """Özet bilgileri güncelle"""
@@ -515,238 +588,127 @@ class RebarCalculatorGUI(QMainWindow):
             QMessageBox.warning(self, "Hata", str(e))
 
     def start_stirrup_selection(self):
-        """Etriye seçim işlemini başlat"""
-        # İşlem seçim dialogu
-        dialog = QDialog(self)
-        dialog.setWindowTitle("İşlem Seçimi")
-        dialog.setMinimumWidth(300)
-        layout = QVBoxLayout(dialog)
-        
-        # İşlem seçenekleri
-        layout.addWidget(QLabel("Yapmak istediğiniz işlemi seçin:"))
-        
-        btn_new = QPushButton("Yeni Etriye Seçimi")
-        btn_continue = QPushButton("Mevcut Seçimleri Hesapla")
-        btn_cancel = QPushButton("İptal")
-        
-        layout.addWidget(btn_new)
-        layout.addWidget(btn_continue)
-        layout.addWidget(btn_cancel)
-        
-        def start_new():
-            dialog.accept()
-            self.start_new_stirrup_selection()
-        
-        def continue_calc():
-            dialog.accept()
-            self.calculate_results()
-        
-        def cancel_op():
-            dialog.reject()
-        
-        btn_new.clicked.connect(start_new)
-        btn_continue.clicked.connect(continue_calc)
-        btn_cancel.clicked.connect(cancel_op)
-        
-        dialog.exec()
-
-    def start_new_stirrup_selection(self):
-        """Yeni etriye seçim işlemini başlat"""
-        # İşlem durumunu güncelle
+        """Etriye seçim işlemini yönet"""
         self.is_operation_running = True
         self.current_operation = 'STIRRUP'
-        
-        # Butonları güncelle
         self.btn_stop.setEnabled(True)
-        self.btn_calculate.setEnabled(True)
-        self.btn_refresh.setEnabled(True)
+        self.statusBar.showMessage("Etriye seçimi başlatıldı...")
         
-        # İşlem butonlarını devre dışı bırak
-        self.btn_rebar.setEnabled(False)
-        self.btn_stirrup.setEnabled(False)
-        self.btn_mesh.setEnabled(False)
-        self.btn_connection.setEnabled(False)
-        
-        self.statusBar.showMessage("Etriye seçimi başlatıldı... (Q tuşu ile seçimi sonlandırabilirsiniz)")
-        
-        try:
-            while self.is_operation_running:
-                # İşlem seçim dialogu
-                dialog = QDialog(self)
-                dialog.setWindowTitle("Etriye Seçim İşlemi")
-                dialog.setMinimumWidth(300)
-                layout = QVBoxLayout(dialog)
+        while self.is_operation_running:  # Sürekli seçim için döngü
+            try:
+                # 1. İlk seçim - Etriye bilgileri
+                etriye_text = self.acad.select_entity("Etriye textini seçin (örn: ƒ10 Etr. l=168)")
+                if not etriye_text:
+                    break  # Seçim iptal edilirse döngüden çık
                 
-                layout.addWidget(QLabel("Ne yapmak istiyorsunuz?"))
+                # Çap ve boy bilgilerini çıkar
+                diameter_match = re.search(r'[ƒØ∅](\d+)|%%C(\d+)', etriye_text)
+                length_match = re.search(r'[Ll]\s*=\s*(\d+)', etriye_text)
                 
-                btn_select = QPushButton("Yeni Etriye Seç")
-                btn_calc = QPushButton("Seçimleri Hesapla")
-                btn_finish = QPushButton("İşlemi Bitir")
-                
-                layout.addWidget(btn_select)
-                layout.addWidget(btn_calc)
-                layout.addWidget(btn_finish)
-                
-                result = [None]  # Dialog sonucunu tutmak için liste
-                
-                def do_select():
-                    result[0] = "select"
-                    dialog.accept()
-                
-                def do_calc():
-                    result[0] = "calc"
-                    dialog.accept()
-                
-                def do_finish():
-                    result[0] = "finish"
-                    dialog.accept()
-                
-                btn_select.clicked.connect(do_select)
-                btn_calc.clicked.connect(do_calc)
-                btn_finish.clicked.connect(do_finish)
-                
-                dialog.exec()
-                
-                if result[0] == "select":
-                    # Etriye seçim işlemi
-                    success = self.select_single_stirrup()
-                    if not success:
-                        continue
-                elif result[0] == "calc":
-                    self.calculate_results()
-                else:  # finish
+                if not (diameter_match and length_match):
+                    print("Geçersiz etriye formatı!")
                     break
-            
-        except Exception as e:
-            QMessageBox.warning(self, "Hata", str(e))
-        finally:
-            self.stop_current_operation()
-
-    def select_single_stirrup(self):
-        """Tek bir etriye seçimi yap"""
-        try:
-            # Etriye text seçimi
-            text = self.acad.select_entity("Etriye seçin")
-            if not text:
-                return False
-            
-            # Text içinde L= yoksa boy uzunluğu iste
-            length_text = None
-            if not self.acad.calculator.extract_length(text):
-                length_text = self.acad.select_entity("Boy uzunluğunu seçin")
-                if not length_text:
-                    return False
-            
-            # Aralık seçimi
-            spacing_text = self.acad.select_entity("Aralık textini seçin")
-            if not spacing_text:
-                return False
-            
-            # Dimension seçimi
-            dimension = self.acad.select_entity("Dimension ölçüsünü seçin")
-            if dimension is None:
-                return False
-            
-            # Seçimleri kaydet
-            self.current_selections.append({
-                'text': text,
-                'length_text': length_text,
-                'spacing_text': spacing_text,
-                'dimension': dimension,
-                'type': 'STIRRUP'
-            })
-            
-            # Her seçimden sonra hesapla
-            if self.calculate_current_selection(self.current_selections[-1]):
-                self.statusBar.showMessage(f"{len(self.current_selections)} adet etriye hesaplandı.")
-                return True
-            
-            return False
-            
-        except Exception as e:
-            QMessageBox.warning(self, "Hata", str(e))
-            return False
-
-    def calculate_current_selection(self, selection):
-        """Mevcut seçimi hesapla"""
-        try:
-            text = selection['text']
-            if selection['length_text']:
-                text += " " + selection['length_text']
-            
-            if selection['type'] == 'STIRRUP':
-                if (self.acad.calculator.process_text(text) and 
-                    self.acad.calculator.process_text(selection['spacing_text'])):
-                    self.acad.calculator.process_dimension(float(selection['dimension']))
-                    self.add_result_to_tree("Etriye", text)
-                    self.update_summary()
-                    return True
-        except Exception as e:
-            print(f"Hesaplama hatası: {str(e)}")
-            return False
-
-    def calculate_results(self):
-        """Tüm seçimleri hesapla"""
-        try:
-            if not self.current_selections:
-                QMessageBox.warning(self, "Uyarı", "Hesaplanacak seçim bulunamadı!")
-                return
-            
-            success_count = 0
-            for selection in self.current_selections:
-                try:
-                    text = selection['text']
-                    if selection['length_text']:
-                        text += " " + selection['length_text']
-                    
-                    if selection['type'] == 'STIRRUP':
-                        # Etriye hesaplama işlemi
-                        if self.acad.calculator.process_text(text):
-                            print(f"Etriye text işlendi: {text}")
-                            
-                            if self.acad.calculator.process_text(selection['spacing_text']):
-                                print(f"Aralık text işlendi: {selection['spacing_text']}")
-                                
-                                dimension = float(selection['dimension'])
-                                if self.acad.calculator.process_dimension(dimension):
-                                    print(f"Dimension işlendi: {dimension}")
-                                    
-                                    # Sonucu ağaca ekle
-                                    self.add_result_to_tree("Etriye", text)
-                                    success_count += 1
-                                    print(f"Etriye başarıyla hesaplandı: {text}")
-                                    
-                                    # Her başarılı hesaplamadan sonra özeti güncelle
-                                    self.update_summary()
-                                else:
-                                    print("Dimension işlenemedi!")
-                            else:
-                                print("Aralık text işlenemedi!")
-                        else:
-                            print("Etriye text işlenemedi!")
-                    
-                    # GUI güncellemelerini yap
-                    QApplication.processEvents()
-                    
-                except Exception as calc_error:
-                    print(f"Hesaplama hatası: {str(calc_error)}")
-                    QMessageBox.warning(self, "Hesaplama Hatası", str(calc_error))
-            
-            # Son durumu göster
-            if success_count > 0:
-                message = f"{success_count} adet etriye başarıyla hesaplandı."
-                QMessageBox.information(self, "Hesaplama Tamamlandı", message)
-                self.statusBar.showMessage(message)
                 
-                # Genel toplamı güncelle
-                total_weight = sum(r.total_weight for r in self.acad.calculator.results)
-                self.total_label.setText(f"Genel Toplam: {total_weight:.2f} kg ({total_weight/1000:.3f} ton)")
-            else:
-                QMessageBox.warning(self, "Uyarı", "Hiçbir hesaplama yapılamadı!")
+                diameter = float(diameter_match.group(1) or diameter_match.group(2))
+                length = float(length_match.group(1))
+                
+                print("\nEtriye Bilgileri:")
+                print(f"- Çap: Ø{diameter}")
+                print(f"- Boy: {length} cm")
+                
+                # 2. İkinci seçim - Aralık bilgisi
+                spacing_text = self.acad.select_entity("Aralık textini seçin (örn: Etr.%%C10/8)")
+                if not spacing_text:
+                    break
+                
+                spacing_match = re.search(r'/(\d+)', spacing_text)
+                if not spacing_match:
+                    print("Geçersiz aralık formatı!")
+                    break
+                
+                spacing = float(spacing_match.group(1))
+                print(f"- Aralık: {spacing} cm")
+                
+                # 3. Üçüncü seçim - Dimension
+                dimension = self.acad.select_entity("Dimension ölçüsünü seçin")
+                if dimension is None:
+                    break
+                
+                try:
+                    total_length = float(dimension)
+                except:
+                    print("Geçersiz dimension değeri!")
+                    break
+                
+                print(f"- Toplam Uzunluk: {total_length} cm")
+                
+                # Hesaplamaları yap
+                print("\nHESAPLAMA SONUÇLARI:")
+                print("--------------------")
+                
+                # 1. Etriye adedi hesabı
+                count = int((total_length / spacing) + 1)
+                print(f"1. Etriye adedi: {count} adet")
+                print(f"   {total_length} cm ÷ {spacing} cm = {count} adet")
+                
+                # 2. Toplam boy hesabı
+                total_length_all = length * count
+                print(f"2. Toplam boy: {total_length_all} cm = {total_length_all/100:.2f} m")
+                print(f"   {length} cm × {count} adet = {total_length_all} cm")
+                
+                # 3. Ağırlık hesabı
+                weight_per_meter = self.acad.calculator.weight_table.get(diameter, 0)
+                total_weight = (total_length_all / 100) * weight_per_meter
+                print(f"3. Toplam ağırlık: {total_weight:.2f} kg")
+                print(f"   {total_length_all/100:.2f} m × {weight_per_meter:.3f} kg/m = {total_weight:.2f} kg")
+                
+                # Sonucu kaydet
+                result = RebarData(
+                    type='STIRRUP',
+                    diameter=diameter,
+                    spacing=spacing,
+                    length=length,
+                    count=count,
+                    total_length=total_length_all,
+                    weight_per_meter=weight_per_meter,
+                    total_weight=total_weight,
+                    description=f"Etriye Ø{diameter}/{spacing} L={length}"
+                )
+                
+                self.acad.calculator.results.append(result)
+                print("\nHesaplama başarıyla kaydedildi!")
+                
+                # GUI'yi güncelle
+                self.add_result_to_tree("Etriye", f"Ø{diameter}/{spacing} L={length}")
+                self.update_summary()
+                
+                # Metraj raporunu kaydet
+                self.save_metraj_report()
+                
+                # Kullanıcıya devam edip etmeyeceğini sor
+                reply = QMessageBox.question(
+                    self,
+                    'Devam Et',
+                    'Başka etriye seçmek istiyor musunuz?',
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if reply == QMessageBox.StandardButton.No:
+                    print("\nEtriye hesaplaması tamamlandı.")
+                    break
+                else:
+                    print("\nBir sonraki etriye için seçime devam edin...")
             
-        except Exception as e:
-            print(f"Genel hata: {str(e)}")
-            QMessageBox.warning(self, "Hesaplama Hatası", str(e))
+            except Exception as e:
+                print(f"\nHata oluştu: {str(e)}")
+                self.statusBar.showMessage("Hata oluştu!")
+                break
+        
+        # İşlem durumunu sıfırla
+        self.is_operation_running = False
+        self.current_operation = None
+        self.btn_stop.setEnabled(False)
+        self.statusBar.showMessage("Etriye hesabı tamamlandı!")
 
     def start_mesh_selection(self):
         self.is_operation_running = True
@@ -784,73 +746,135 @@ class RebarCalculatorGUI(QMainWindow):
     def process_mesh_selection(self, mesh_type):
         """Hasır seçim işlemini yönet"""
         try:
-            while True:
-                if mesh_type == 'WALL':
-                    # Perde hasır seçimi
-                    text = self.acad.select_entity("Perde hasır tipini seçin (örn: 2xQ257/257) veya çıkmak için ESC")
-                    if not text:
-                        break
-                    
-                    dim_text = self.acad.select_entity("Boyutları seçin (örn: 215x267)")
-                    if not dim_text:
-                        break
-                    
-                    if self.acad.calculator.process_wall_mesh(text, dim_text):
-                        self.add_result_to_tree("Perde Hasır", f"{text} - {dim_text}")
-                    else:
-                        retry = input("\nGeçersiz format. Tekrar denemek ister misiniz? (E/H): ")
-                        if retry.upper() != 'E':
-                            break
-                else:
-                    # Döşeme hasır seçimi
-                    text = self.acad.select_entity("Döşeme hasır tipini seçin (örn: Q257/257 450/215) veya çıkmak için ESC")
-                    if not text:
-                        break
-                    
-                    if self.acad.calculator.process_slab_mesh(text):
-                        self.add_result_to_tree("Döşeme Hasır", text)
-                    else:
-                        retry = input("\nGeçersiz format. Tekrar denemek ister misiniz? (E/H): ")
-                        if retry.upper() != 'E':
-                            break
+            print(f"\nDöşeme hasırlarını seçin (Seçimi tamamladıktan sonra ENTER'a basın)")
             
-            self.update_summary()
+            # Seçilen textleri al
+            selected_texts = self.acad.select_texts()
+            if not selected_texts:
+                return
+            
+            print("\nHasır hesaplamaları başlıyor...")
+            
+            for mesh_text in selected_texts:
+                try:
+                    # Q ve R tipi hasır formatı: "Q257/257  450/215" şeklinde
+                    match = re.search(r'([QR]\d+(?:/\d+)?)\s*(\d+)/(\d+)', mesh_text)
+                    if match:
+                        mesh_code = match.group(1)  # Q257/257
+                        width = float(match.group(2))  # 450
+                        height = float(match.group(3))  # 215
+                        
+                        print(f"\nHasır tipi: {mesh_code}")
+                        print(f"Boyutlar: {width}x{height} cm")
+                        
+                        # Hesaplamayı yap
+                        if self.acad.calculator.calculate_mesh(mesh_code, width, height):
+                            # GUI'yi güncelle - Burayı ekledik
+                            result = self.acad.calculator.results[-1]  # Son eklenen sonuç
+                            item = QTreeWidgetItem(self.result_tree)
+                            item.setText(0, "Döşeme Hasırı")
+                            item.setText(1, f"{result.mesh_code} {result.width}×{result.height}")
+                            item.setText(2, f"{result.total_weight:.2f} kg")
+                            
+                            # Özeti güncelle
+                            self.update_summary()
+                            
+                except Exception as e:
+                    print(f"Hasır işleme hatası ({mesh_text}): {str(e)}")
+                    continue
+            
+            print("\nAutoCAD güncelleniyor...")
+            self.statusBar.showMessage("İşlem başarıyla tamamlandı!")
             
         except Exception as e:
-            QMessageBox.warning(self, "Hata", str(e))
+            print(f"\nHata: {str(e)}")
+            self.statusBar.showMessage("Hata oluştu!")
 
     def start_connection_selection(self):
+        """Ara bağlantı seçim işlemini yönet"""
         self.is_operation_running = True
         self.current_operation = 'CONNECTION'
         self.btn_stop.setEnabled(True)
         self.statusBar.showMessage("Ara bağlantı seçimi başlatıldı...")
+        
         try:
-            while True:
-                # Ara bağlantı text seçimi
-                text = self.acad.select_entity("Ara bağlantı seçin (örn: 2X∅12/15 L=185) veya çıkmak için ESC")
-                if not text:
-                    break
-                
-                # Text içinde L= yoksa boy uzunluğu iste
-                if not self.acad.calculator.extract_length(text):
-                    length_text = self.acad.select_entity("Boy uzunluğunu seçin")
-                    if not length_text:
-                        break
-                    text = text + " " + length_text
-                
-                # Dimension seçimi
-                dimension = self.acad.select_entity("Dimension ölçüsünü seçin")
-                if dimension is None:
-                    break
-                
-                # Hesaplama ve sonuç ekleme
-                if self.acad.calculator.process_connection_rebar(text, None, float(dimension)):
-                    self.add_result_to_tree("Ara Bağlantı", text)
+            # 1. Ara bağlantı text seçimi
+            conn_text = self.acad.select_entity("Ara bağlantı textini seçin (örn: 2X∅12/15)")
+            if not conn_text:
+                return
             
+            # Çap ve adet bilgilerini çıkar
+            pattern = r'(\d+)X[ƒØ∅](\d+)/(\d+)'
+            match = re.search(pattern, conn_text)
+            
+            if not match:
+                print("Geçersiz ara bağlantı formatı!")
+                return
+            
+            count = int(match.group(1))
+            diameter = float(match.group(2))
+            spacing = float(match.group(3))
+            
+            print("\nAra Bağlantı Bilgileri:")
+            print(f"- Çap: Ø{diameter}")
+            print(f"- Adet: {count}")
+            print(f"- Aralık: {spacing} cm")
+            
+            # 2. Boy uzunluğu seçimi
+            length_text = self.acad.select_entity("Boy uzunluğunu seçin (örn: L=185)")
+            if not length_text:
+                return
+            
+            length_match = re.search(r'[Ll]\s*=\s*(\d+)', length_text)
+            if not length_match:
+                print("Geçersiz boy formatı!")
+                return
+            
+            length = float(length_match.group(1))
+            print(f"- Boy: {length} cm")
+            
+            # Hesaplamaları yap
+            print("\nHESAPLAMA SONUÇLARI:")
+            print("--------------------")
+            
+            # Toplam boy hesabı
+            total_length = length * count
+            print(f"1. Toplam boy: {total_length} cm = {total_length/100:.2f} m")
+            print(f"   {length} cm × {count} adet = {total_length} cm")
+            
+            # Ağırlık hesabı
+            weight_per_meter = self.acad.calculator.weight_table.get(diameter, 0)
+            total_weight = (total_length / 100) * weight_per_meter
+            print(f"2. Toplam ağırlık: {total_weight:.2f} kg")
+            print(f"   {total_length/100:.2f} m × {weight_per_meter:.3f} kg/m = {total_weight:.2f} kg")
+            
+            # Sonucu kaydet
+            result = RebarData(
+                type='CONNECTION',
+                diameter=diameter,
+                length=length,
+                count=count,
+                total_length=total_length,
+                weight_per_meter=weight_per_meter,
+                total_weight=total_weight,
+                description=f"{count}×Ø{diameter}/15 L={length}",
+                spacing=spacing
+            )
+            
+            self.acad.calculator.results.append(result)
+            print("\nHesaplama başarıyla kaydedildi!")
+            
+            # GUI'yi güncelle
+            self.add_result_to_tree("Ara Bağlantı", f"{count}×Ø{diameter}/15 L={length}")
             self.update_summary()
+            self.statusBar.showMessage("Ara bağlantı hesabı tamamlandı!")
+            
+            # Metraj raporunu kaydet
+            self.save_metraj_report()
             
         except Exception as e:
-            QMessageBox.warning(self, "Hata", str(e))
+            print(f"\nHata oluştu: {str(e)}")
+            self.statusBar.showMessage("Hata oluştu!")
 
     def stop_current_operation(self):
         """Mevcut işlemi durdur"""
@@ -863,6 +887,18 @@ class RebarCalculatorGUI(QMainWindow):
             
             # İşlem durumunu güncelle
             self.is_operation_running = False
+            
+            # Mevcut işlem için son raporu kaydet
+            if self.current_operation == 'STIRRUP':
+                print("\nEtriye hesabı durduruluyor...")
+                self.save_metraj_report()
+                print("Etriye hesabı kaydedildi.")
+            elif self.current_operation == 'REBAR':
+                print("\nBoy demiri hesabı durduruluyor...")
+                self.save_metraj_report()
+                print("Boy demiri hesabı kaydedildi.")
+            
+            # İşlem tipini sıfırla
             self.current_operation = None
             
             # Butonları aktif et
@@ -876,21 +912,24 @@ class RebarCalculatorGUI(QMainWindow):
             
             # Özeti güncelle
             self.update_summary()
-            self.statusBar.showMessage("İşlem durduruldu ve özet güncellendi")
             
-            # Kaydetmek isteyip istemediğini sor
-            if self.current_selections:  # Seçim varsa sor
-                reply = QMessageBox.question(
-                    self,
-                    'İşlemi Durdur',
-                    'Mevcut işlemi kaydetmek istiyor musunuz?',
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No
-                )
-                
-                if reply == QMessageBox.StandardButton.Yes:
-                    self.save_project()
-                
+            # Kullanıcıya bilgi ver
+            message = "İşlem durduruldu ve hesaplamalar kaydedildi.\n\n"
+            message += "Yeni bir hesaplama yapmak için:\n"
+            message += "1. Boy Demiri\n"
+            message += "2. Etriye\n"
+            message += "3. Hasır\n"
+            message += "4. Ara Bağlantı\n"
+            message += "\nSeçeneklerinden birini seçebilirsiniz."
+            
+            QMessageBox.information(
+                self,
+                'İşlem Durduruldu',
+                message
+            )
+            
+            self.statusBar.showMessage("İşlem durduruldu ve hesaplamalar kaydedildi. Yeni bir hesaplama seçebilirsiniz.")
+            
         except Exception as e:
             QMessageBox.warning(self, "Hata", f"İşlem durdurulurken hata oluştu: {str(e)}")
 
@@ -955,6 +994,171 @@ class RebarCalculatorGUI(QMainWindow):
                     
         except Exception as e:
             QMessageBox.warning(self, "Hata", f"Yenileme sırasında hata oluştu: {str(e)}")
+
+    def calculate_results(self):
+        """Seçilen öğelerin hesaplamasını yap"""
+        try:
+            if not self.acad.calculator.results:
+                QMessageBox.warning(self, "Uyarı", "Henüz hesaplanmış sonuç yok!")
+                return
+            
+            # Özeti güncelle
+            self.update_summary()
+            
+            # Başarı mesajı
+            total_weight = sum(r.total_weight for r in self.acad.calculator.results)
+            message = f"Hesaplama tamamlandı!\n\nToplam Ağırlık: {total_weight:.2f} kg ({total_weight/1000:.3f} ton)"
+            QMessageBox.information(self, "Başarılı", message)
+            
+            self.statusBar.showMessage("Hesaplama tamamlandı!")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Hata", str(e))
+            self.statusBar.showMessage("Hesaplama sırasında hata oluştu!")
+
+    def save_metraj_report(self):
+        """Metraj raporunu kaydet"""
+        try:
+            # Rapor klasörü oluştur
+            today = datetime.now().strftime('%Y-%m-%d')
+            report_dir = f"metraj_raporlari_{today}"
+            print(f"\nDEBUG: Rapor dizini: {report_dir}")
+            
+            if not os.path.exists(report_dir):
+                os.makedirs(report_dir)
+            
+            # Kategori dosyaları
+            files = {
+                'REBAR': os.path.join(report_dir, "boy_demirleri.txt"),
+                'STIRRUP': os.path.join(report_dir, "etriyeler.txt"),
+                'MESH_WALL': os.path.join(report_dir, "perde_hasirlari.txt"),
+                'MESH_SLAB': os.path.join(report_dir, "doseme_hasirlari.txt"),
+                'CONNECTION': os.path.join(report_dir, "ara_baglanti.txt")
+            }
+            
+            print("\nDEBUG: Tüm sonuçlar:")
+            for r in self.acad.calculator.results:
+                print(f"- Tip: {r.type}, Açıklama: {r.description}")
+            
+            # Her kategori için rapor oluştur
+            for category, filename in files.items():
+                print(f"\nDEBUG: Kategori işleniyor: {category}")
+                
+                # Sonuçları filtrele
+                results = [r for r in self.acad.calculator.results if r.type == category]
+                
+                if not results:
+                    print(f"DEBUG: {category} için sonuç bulunamadı")
+                    continue
+                
+                print(f"DEBUG: {len(results)} sonuç bulundu")
+                
+                # Rapor dosyasını oluştur
+                with open(filename, 'w', encoding='utf-8') as f:
+                    # Başlık
+                    if category == 'MESH_WALL':
+                        f.write("\nPERDE HASIRLARI RAPORU\n")
+                    elif category == 'MESH_SLAB':
+                        f.write("\nDÖŞEME HASIRLARI RAPORU\n")
+                    elif category == 'REBAR':
+                        f.write("\nBOY DEMİRLERİ RAPORU\n")
+                    elif category == 'STIRRUP':
+                        f.write("\nETRİYE RAPORU\n")
+                    f.write("="*50 + "\n\n")
+                    
+                    # Tarih ve saat bilgisi
+                    f.write(f"Tarih: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                    
+                    # Çapa göre grupla
+                    by_diameter = {}
+                    for r in results:
+                        if r.diameter not in by_diameter:
+                            by_diameter[r.diameter] = []
+                        by_diameter[r.diameter].append(r)
+                    
+                    # Her çap için detayları yaz
+                    for diameter, items in by_diameter.items():
+                        total_count = sum(r.count for r in items)
+                        total_weight = sum(r.total_weight for r in items)
+                        
+                        f.write(f"Ø{diameter}:\n")
+                        f.write(f"- Toplam Boy: 0.00 m\n")
+                        f.write(f"- Toplam Adet: {total_count} adet\n")
+                        f.write(f"- Toplam Ağırlık: {total_weight:.2f} kg\n\n")
+                        
+                        # Her hasır için detay
+                        for r in items:
+                            area = (r.width * r.height)/10000
+                            f.write(f"  * Hasır {r.description}\n")
+                            f.write(f"    Alan: {area:.2f} m², Ağırlık: {r.total_weight:.2f} kg\n")
+                        f.write("\n")
+                    
+                    # Kategori toplamı
+                    category_weight = sum(r.total_weight for r in results)
+                    category_area = sum((r.width * r.height)/10000 for r in results)
+                    
+                    f.write("\nKategori Toplamı:\n")
+                    f.write("="*30 + "\n")
+                    f.write(f"Toplam Alan: {category_area:.2f} m²\n")
+                    f.write(f"Toplam Ağırlık: {category_weight:.2f} kg ({category_weight/1000:.3f} ton)\n")
+                
+                print(f"DEBUG: {filename} dosyası oluşturuldu")
+            
+            print("\nDEBUG: Tüm raporlar tamamlandı")
+            
+        except Exception as e:
+            print(f"\nDEBUG: Hata: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def get_mesh_properties(self, mesh_code):
+        """Hasır özelliklerini al"""
+        try:
+            # Q tipi hasırlar için çap ve aralık tablosu
+            mesh_properties = {
+                'Q106': (4.0, 15),  # (çap, aralık)
+                'Q131': (4.5, 15),
+                'Q158': (5.0, 15),
+                'Q188': (5.5, 15),
+                'Q221': (6.0, 15),
+                'Q257': (6.5, 15),
+                'Q295': (7.0, 15),
+                'Q317': (7.2, 15),
+                'Q335': (7.4, 15),
+                'Q377': (7.9, 15),
+                'Q424': (8.4, 15),
+                'Q503': (9.1, 15),
+                'Q513': (9.2, 15),
+                'Q524': (9.3, 15),
+                'Q589': (9.8, 15),
+                'Q636': (10.2, 15),
+                'Q785': (11.4, 15),
+                
+                # TR tipi hasırlar için
+                'TR131': (4.5, 15),
+                'TR158': (5.0, 15),
+                'TR188': (5.5, 15),
+                'TR221': (6.0, 15),
+                'TR257': (6.5, 15),
+                'TR295': (7.0, 15),
+                'TR317': (7.2, 15),
+                'TR335': (7.4, 15),
+                'TR377': (7.9, 15),
+                'TR443': (8.6, 15),
+                'TR513': (9.2, 15),
+                'TR524': (9.3, 15),
+                'TR589': (9.8, 15)
+            }
+            
+            if mesh_code in mesh_properties:
+                return mesh_properties[mesh_code]
+            else:
+                print(f"Uyarı: {mesh_code} için özellikler bulunamadı!")
+                return (0, 0)  # Varsayılan değerler
+            
+        except Exception as e:
+            print(f"Hasır özellikleri alınırken hata: {str(e)}")
+            return (0, 0)
 
 def main():
     app = QApplication(sys.argv)

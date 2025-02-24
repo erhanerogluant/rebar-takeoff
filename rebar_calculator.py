@@ -6,6 +6,7 @@ from typing import List, Optional
 import logging
 from datetime import datetime
 import os
+from report_manager import ReportManager
 
 @dataclass
 class RebarData:
@@ -21,11 +22,14 @@ class RebarData:
     mesh_code: Optional[str] = None  # Hasır kodu (Q257/257, R257, vs.)
     area: Optional[float] = None     # Hasır alanı (m2)
     width: Optional[float] = None    # Hasır genişliği (cm)
+    height: Optional[float] = None    # Hasır yüksekliği (cm)
 
 class RebarCalculator:
     def __init__(self):
-        # Demir çapı - birim ağırlık tablosu (kg/mt)
+        """Hesaplayıcıyı başlat"""
+        # Demir çapına göre birim ağırlık tablosu (kg/m)
         self.weight_table = {
+            6: 0.222,
             8: 0.395,
             10: 0.617,
             12: 0.888,
@@ -33,114 +37,48 @@ class RebarCalculator:
             16: 1.578,
             18: 1.998,
             20: 2.466,
-            22: 2.984
+            22: 2.984,
+            24: 3.551,
+            26: 4.168,
+            28: 4.834,
+            30: 5.549,
+            32: 6.313,
         }
         
-        # Hasır donatı tipleri ve birim ağırlıkları (kg/m2)
+        # Hasır tipleri için birim ağırlık tablosu (kg/m²)
         self.mesh_types = {
-            # Q Tipi Hasırlar
-            'Q106/106': 1.66,
-            'Q131/131': 2.06,
-            'Q158/158': 2.49,
-            'Q188/188': 2.96,
-            'Q221/221': 3.47,
-            'Q257/257': 4.03,
-            'Q257/188': 3.49,
-            'Q295/295': 4.62,
-            'Q295/257': 4.33,
-            'Q295/221': 4.04,
-            'Q295/188': 3.79,
-            'Q295/158': 3.56,
-            'Q317/317': 5.00,
-            'Q317/295': 4.81,
-            'Q317/257': 4.52,
-            'Q317/221': 4.24,
-            'Q317/188': 3.98,
-            'Q335/335': 5.26,
-            'Q335/317': 5.13,
-            'Q335/295': 4.94,
-            'Q335/257': 4.64,
-            'Q335/221': 4.37,
-            'Q335/188': 4.11,
-            'Q377/377': 5.94,
-            'Q377/335': 5.60,
-            'Q377/317': 5.47,
-            'Q377/295': 5.28,
-            'Q377/257': 4.98,
-            'Q377/221': 4.71,
-            'Q377/188': 4.45,
-            'Q424/424': 6.66,
-            'Q424/377': 6.30,
-            'Q424/335': 5.96,
-            'Q424/317': 5.98,
-            'Q424/295': 5.64,
-            'Q424/257': 5.34,
-            'Q424/221': 5.07,
-            'Q443/443': 6.96,
-            'Q443/377': 6.45,
-            'Q443/335': 6.11,
-            'Q443/317': 5.98,
-            'Q443/295': 5.79,
-            'Q443/257': 5.49,
-            'Q443/221': 5.22,
-            'Q473/473': 7.42,
-            'Q503/503': 7.89,
-            'Q513/513': 8.09,
-            'Q513/257': 6.06,
-            'Q524/524': 8.22,
-            'Q524/443': 7.59,
-            'Q524/424': 7.44,
-            'Q524/377': 7.08,
-            'Q524/335': 6.74,
-            'Q524/317': 6.61,
-            'Q524/295': 6.42,
-            'Q524/257': 6.12,
-            'Q589/589': 9.24,
-            'Q589/503': 8.61,
-            'Q589/378': 7.64,
-            'Q589/335': 7.30,
-            'Q589/317': 7.17,
-            'Q589/295': 6.98,
-            'Q634/634': 9.95,
-            'Q636/636': 9.99,
-            'Q636/424': 8.32,
-            'Q709/424': 8.89,
-            'Q754/754': 11.84,
-            'Q785/785': 12.33,
-            'Q785/295': 8.48,
-            'Q785/257': 8.18,
-            'Q950/950': 14.92,
-            'Q1131/1131': 17.76,
-
-            # R Tipi Hasırlar
-            'R106': 1.33,
-            'R131': 1.65,
-            'R158': 1.86,
-            'R188': 2.10,
-            'R221': 2.36,
-            'R257': 2.63,
-            'R295': 2.93,
-            'R317': 3.11,
-            'R335': 3.25,
-            'R377': 3.58,
-            'R443': 4.22,
-            'R513': 4.92,
-            'R589': 5.66,
-
-            # TR Tipi Hasırlar
-            'TR131': 1.59,
-            'TR158': 1.81,
-            'TR188': 2.04,
-            'TR221': 2.29,
-            'TR257': 2.57,
-            'TR295': 2.86,
-            'TR317': 3.04,
-            'TR335': 3.18,
-            'TR377': 3.51,
-            'TR443': 4.13,
-            'TR513': 4.81,
-            'TR524': 4.90,
-            'TR589': 5.54
+            'Q106': 1.06,
+            'Q131': 1.31,
+            'Q158': 1.58,
+            'Q188': 1.88,
+            'Q221': 2.21,
+            'Q257': 2.57,
+            'Q295': 2.95,
+            'Q317': 3.17,
+            'Q335': 3.35,
+            'Q377': 3.77,
+            'Q424': 4.24,
+            'Q503': 5.03,
+            'Q513': 5.13,
+            'Q524': 5.24,
+            'Q589': 5.89,
+            'Q636': 6.36,
+            'Q785': 7.85,
+            
+            'R106': 1.06,
+            'R131': 1.31,
+            'R158': 1.58,
+            'R188': 1.88,
+            'R221': 2.21,
+            'R257': 2.57,
+            'R295': 2.95,
+            'R317': 3.17,
+            'R335': 3.35,
+            'R377': 3.77,
+            'R443': 4.43,
+            'R513': 5.13,
+            'R524': 5.24,
+            'R589': 5.89
         }
         
         # Hasır standart ebatları (cm)
@@ -162,8 +100,24 @@ class RebarCalculator:
         self.current_data = {}
         self.results: List[RebarData] = []
         
-        # Loglama sistemi kurulumu
-        self.setup_logging()
+        # Kategori bazlı verileri saklamak için sözlük
+        self.category_data = {}
+        
+        # Logger'ı ayarla
+        self.logger = logging.getLogger('RebarCalculator')
+        self.logger.setLevel(logging.INFO)
+        
+        # Dosya handler'ı
+        log_dir = 'logs'
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
+        log_file = os.path.join(log_dir, f'rebar_calc_{datetime.now().strftime("%Y-%m-%d")}.log')
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+        self.logger.addHandler(file_handler)
+
+        self.report_manager = ReportManager()
 
     def setup_logging(self):
         """Loglama sistemini kur"""
@@ -232,36 +186,24 @@ class RebarCalculator:
         except Exception as e:
             self.logger.error(f"Loglama hatası: {str(e)}")
 
-    def log_summary(self, category_type=None):
-        """Özet raporu logla"""
+    def log_summary(self, result_type):
+        """Hesaplama sonuçlarını logla"""
         try:
-            if not self.results:
-                return
+            # İlgili sonuçları filtrele
+            results = [r for r in self.results if r.type == result_type]
             
-            summary = "\nÖZET RAPOR\n" + "="*50
-            
-            totals = self.calculate_totals()
-            
-            if category_type:
-                if totals[category_type]:
-                    summary += f"\n\n{category_type} HESABI ÖZETİ:"
-                    summary += self.format_category_summary(category_type, totals[category_type])
-            else:
-                for cat_type, data in totals.items():
-                    if data:
-                        summary += f"\n\n{cat_type} HESABI ÖZETİ:"
-                        summary += self.format_category_summary(cat_type, data)
-            
-            total_weight = sum(sum(item['weight'] for item in cat.values())
-                             for cat in totals.values())
-            
-            summary += f"\n\nGENEL TOPLAM:"
-            summary += f"\nToplam Ağırlık: {total_weight:.2f} kg ({total_weight/1000:.3f} ton)"
-            
-            self.logger.info(summary)
+            # Özeti logla
+            if results:
+                total_weight = sum(r.total_weight for r in results)
+                self.logger.info(
+                    f"\n{result_type} HESABI ÖZETİ:"
+                    f"\nToplam sonuç sayısı: {len(results)}"
+                    f"\nToplam ağırlık: {total_weight:.2f} kg ({total_weight/1000:.3f} ton)"
+                )
             
         except Exception as e:
-            self.logger.error(f"Özet loglama hatası: {str(e)}")
+            print(f"Loglama hatası: {str(e)}")
+            self.logger.error(f"Loglama hatası: {str(e)}")
 
     def _handle_stirrup_length(self, match) -> dict:
         diameter = float(match.group(1))
@@ -610,28 +552,22 @@ class RebarCalculator:
             total_weight = area * count * weight_per_m2
             
             new_result = RebarData(
-                type='SLAB',
-                diameter=0,  # Hasır için çap kullanılmıyor
+                type='SLAB',  # 'MESH_SLAB' yerine 'SLAB' kullan
+                diameter=0,
                 spacing=None,
                 length=length,
                 count=count,
-                total_length=0,  # Hasır için boy yerine alan kullanılıyor
-                weight_per_meter=weight_per_m2,  # kg/m2
+                total_length=0,
+                weight_per_meter=weight_per_m2,
                 total_weight=total_weight,
                 description=f"Döşeme Hasır {count}x{mesh_code} ({length}x{width})",
                 mesh_code=mesh_code,
                 area=area * count,
-                width=width
+                width=width,
+                height=length
             )
             
             self.results.append(new_result)
-            print(f"\nDöşeme hasır hesabı tamamlandı:")
-            print(f"- Tip: {count}x{mesh_code}")
-            print(f"- Boyutlar: {length}x{width} cm")
-            print(f"- Alan: {area:.2f} m2")
-            print(f"- Toplam Alan: {area * count:.2f} m2")
-            print(f"- Birim Ağırlık: {weight_per_m2:.2f} kg/m2")
-            print(f"- Toplam Ağırlık: {total_weight:.2f} kg")
             
             # Sonucu logla
             self.log_calculation('SLAB', mesh_text, new_result)
@@ -706,122 +642,52 @@ class RebarCalculator:
             print(f"Hata: {str(e)}")
             return False
 
-    def show_summary(self, result_type=None):
-        """Seçilen tip için özet rapor göster"""
-        if not self.results:
-            print("\nHenüz hesaplanmış sonuç yok!")
-            return
+    def show_summary(self, result_type):
+        """Hesaplama özetini göster"""
+        try:
+            results = [r for r in self.results if r.type == result_type]
+            if not results:
+                return
 
-        totals = {
-            'STIRRUP': {},    # Etriyeler için
-            'REBAR': {},      # Boy demirleri için
-            'CONNECTION': {},  # Ara bağlantılar için
-            'WALL': {},       # Perde hasırları için
-            'SLAB': {},       # Döşeme hasırları için
-        }
-
-        # Sonuçları kategorilere ayır
-        for result in self.results:
-            if result.type in ['WALL', 'SLAB']:
-                # Hasır hesapları için
-                if result.mesh_code not in totals[result.type]:
-                    totals[result.type][result.mesh_code] = {
-                        'area': 0,
-                        'weight': 0,
-                        'count': 0
-                    }
-                totals[result.type][result.mesh_code]['area'] += result.area
-                totals[result.type][result.mesh_code]['weight'] += result.total_weight
-                totals[result.type][result.mesh_code]['count'] += result.count
-            else:
-                # Nervürlü demirler için
-                key = f"Ø{result.diameter}"
-                if key not in totals[result.type]:
-                    totals[result.type][key] = {
-                        'length': 0,
-                        'weight': 0,
-                        'count': 0
-                    }
-                totals[result.type][key]['length'] += result.total_length
-                totals[result.type][key]['weight'] += result.total_weight
-                totals[result.type][key]['count'] += result.count
-
-        # Özet raporu göster
-        if result_type:
-            self._print_category_summary(result_type, totals[result_type])
-        else:
             print("\nÖZET RAPOR")
-            print("=" * 50)
-            
-            # Etriyeler
-            if totals['STIRRUP']:
-                print("\nETRİYELER:")
-                print("-" * 30)
-                self._print_category_summary('STIRRUP', totals['STIRRUP'])
-            
-            # Boy demirleri
-            if totals['REBAR']:
-                print("\nBOY DEMİRLERİ:")
-                print("-" * 30)
-                self._print_category_summary('REBAR', totals['REBAR'])
-            
-            # Ara bağlantılar
-            if totals['CONNECTION']:
-                print("\nARA BAĞLANTILAR:")
-                print("-" * 30)
-                self._print_category_summary('CONNECTION', totals['CONNECTION'])
-            
-            # Perde hasırları
-            if totals['WALL']:
-                print("\nPERDE HASIRLARI:")
-                print("-" * 30)
-                self._print_category_summary('WALL', totals['WALL'])
-            
-            # Döşeme hasırları
-            if totals['SLAB']:
-                print("\nDÖŞEME HASIRLARI:")
-                print("-" * 30)
-                self._print_category_summary('SLAB', totals['SLAB'])
-            
+            print("="*50)
+            print("\nDÖŞEME HASIRLARI:")
+            print("-"*30)
+
+            # Hasır gruplarını oluştur
+            mesh_groups = {}
+            for result in results:
+                if result.mesh_code not in mesh_groups:
+                    mesh_groups[result.mesh_code] = {
+                        'area': 0,
+                        'count': 0,
+                        'weight': 0
+                    }
+                group = mesh_groups[result.mesh_code]
+                group['area'] += result.area
+                group['count'] += result.count
+                group['weight'] += result.total_weight
+
+            # Grupları yazdır
+            for mesh_code, group in mesh_groups.items():
+                print(f"\n{mesh_code}:")
+                print(f"- Alan: {group['area']:.2f} m²")
+                print(f"- Adet: {group['count']} adet")
+                print(f"- Ağırlık: {group['weight']:.2f} kg")
+
             # Genel toplam
-            total_weight = sum(sum(item['weight'] for item in category.values())
-                             for category in totals.values())
+            total_area = sum(g['area'] for g in mesh_groups.values())
+            total_count = sum(g['count'] for g in mesh_groups.values())
+            total_weight = sum(g['weight'] for g in mesh_groups.values())
+
             print("\nGENEL TOPLAM")
-            print("=" * 30)
+            print("="*30)
+            print(f"Toplam Alan: {total_area:.2f} m²")
+            print(f"Toplam Adet: {total_count} adet")
             print(f"Toplam Ağırlık: {total_weight:.2f} kg ({total_weight/1000:.3f} ton)")
 
-    def _print_category_summary(self, category_type, data):
-        """Kategori özetini yazdır"""
-        total_weight = sum(item['weight'] for item in data.values())
-        
-        if category_type in ['WALL', 'SLAB']:
-            total_area = sum(item['area'] for item in data.values())
-            total_count = sum(item['count'] for item in data.values())
-            
-            for mesh_code, values in data.items():
-                print(f"\n{mesh_code}:")
-                print(f"- Toplam Alan: {values['area']:.2f} m²")
-                print(f"- Toplam Adet: {values['count']} adet")
-                print(f"- Toplam Ağırlık: {values['weight']:.2f} kg")
-            
-            print(f"\nKategori Toplamı:")
-            print(f"- Toplam Alan: {total_area:.2f} m²")
-            print(f"- Toplam Adet: {total_count} adet")
-            print(f"- Toplam Ağırlık: {total_weight:.2f} kg")
-        else:
-            total_length = sum(item['length'] for item in data.values())
-            total_count = sum(item['count'] for item in data.values())
-            
-            for diameter, values in data.items():
-                print(f"\n{diameter}:")
-                print(f"- Toplam Boy: {values['length']/100:.2f} m")
-                print(f"- Toplam Adet: {values['count']} adet")
-                print(f"- Toplam Ağırlık: {values['weight']:.2f} kg")
-            
-            print(f"\nKategori Toplamı:")
-            print(f"- Toplam Boy: {total_length/100:.2f} m")
-            print(f"- Toplam Adet: {total_count} adet")
-            print(f"- Toplam Ağırlık: {total_weight:.2f} kg")
+        except Exception as e:
+            print(f"Özet gösterme hatası: {str(e)}")
 
     def calculate_totals(self):
         totals = {
@@ -894,3 +760,120 @@ class RebarCalculator:
             summary += f"\n- Toplam Ağırlık: {total_weight:.2f} kg"
         
         return summary
+
+    def calculate_mesh(self, mesh_type, width, height):
+        """Hasır hesaplamalarını yap"""
+        try:
+            # Hasır tipinden çap bilgisini al
+            if '/' in mesh_type:  # Q257/257 formatı
+                mesh_code = mesh_type.split('/')[0]  # Q257
+            else:  # R257 formatı
+                mesh_code = mesh_type
+            
+            # Çap ve aralık bilgilerini al
+            diameter, spacing = self.get_mesh_properties(mesh_code)
+            
+            # Alan hesabı (m2)
+            area = (width * height) / 10000
+            
+            # Ağırlık hesabı
+            weight_per_m2 = self.mesh_types.get(mesh_code, 0)
+            total_weight = area * weight_per_m2
+            
+            # Kategori tipini belirle
+            category_type = 'SLAB'  # 'MESH_SLAB' yerine 'SLAB' kullan
+            
+            print(f"\nDEBUG: Hasır tipi belirlendi: {category_type}")
+            
+            # Sonucu kaydet
+            result = RebarData(
+                type=category_type,  # Burada da 'SLAB' kullanılacak
+                diameter=diameter,
+                length=height,
+                count=1,
+                total_length=0,
+                weight_per_meter=weight_per_m2,
+                total_weight=total_weight,
+                description=f"{mesh_type} {width}×{height}",
+                mesh_code=mesh_code,
+                width=width,
+                height=height,
+                spacing=spacing,
+                area=area
+            )
+            
+            self.results.append(result)
+            
+            # Log mesajını oluştur
+            log_message = f"\nHasır Hesaplama Sonucu:"
+            log_message += f"\n- Tip: {mesh_type}"
+            log_message += f"\n- Boyutlar: {width}×{height} cm"
+            log_message += f"\n- Alan: {area:.2f} m²"
+            log_message += f"\n- Birim Ağırlık: {weight_per_m2:.2f} kg/m²"
+            log_message += f"\n- Toplam Ağırlık: {total_weight:.2f} kg"
+            
+            # Genel toplam ağırlığı hesapla ve ekle
+            total_weight_all = sum(r.total_weight for r in self.results)
+            log_message += f"\n\nGenel Toplam Ağırlık: {total_weight_all:.2f} kg ({total_weight_all/1000:.3f} ton)"
+            
+            # Logger'a gönder
+            self.logger.info(log_message)
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Hasır hesaplama hatası: {str(e)}")
+            return False
+
+    def get_mesh_properties(self, mesh_code):
+        """Hasır özelliklerini al"""
+        try:
+            # Q ve R tipi hasırlar için çap ve aralık tablosu
+            mesh_properties = {
+                'Q106': (4.0, 15),  # (çap, aralık)
+                'Q131': (4.5, 15),
+                'Q158': (5.0, 15),
+                'Q188': (5.5, 15),
+                'Q221': (6.0, 15),
+                'Q257': (6.5, 15),
+                'Q295': (7.0, 15),
+                'Q317': (7.2, 15),
+                'Q335': (7.4, 15),
+                'Q377': (7.9, 15),
+                'Q424': (8.4, 15),
+                'Q503': (9.1, 15),
+                'Q513': (9.2, 15),
+                'Q524': (9.3, 15),
+                'Q589': (9.8, 15),
+                'Q636': (10.2, 15),
+                'Q785': (11.4, 15),
+                
+                # R tipi hasırlar için
+                'R106': (4.0, 15),
+                'R131': (4.5, 15),
+                'R158': (5.0, 15),
+                'R188': (5.5, 15),
+                'R221': (6.0, 15),
+                'R257': (6.5, 15),
+                'R295': (7.0, 15),
+                'R317': (7.2, 15),
+                'R335': (7.4, 15),
+                'R377': (7.9, 15),
+                'R443': (8.6, 15),
+                'R513': (9.2, 15),
+                'R524': (9.3, 15),
+                'R589': (9.8, 15)
+            }
+            
+            # Mesh kodunu temizle (Q257/257 -> Q257)
+            clean_code = mesh_code.split('/')[0] if '/' in mesh_code else mesh_code
+            
+            if clean_code in mesh_properties:
+                return mesh_properties[clean_code]
+            else:
+                print(f"Uyarı: {mesh_code} için özellikler bulunamadı!")
+                return (0, 0)  # Varsayılan değerler
+        
+        except Exception as e:
+            print(f"Hasır özellikleri alınırken hata: {str(e)}")
+            return (0, 0)
