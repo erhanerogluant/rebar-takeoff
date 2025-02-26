@@ -7,22 +7,39 @@ import logging
 from datetime import datetime
 import os
 from report_manager import ReportManager
+import numpy as np
 
 @dataclass
 class RebarData:
-    type: str          # 'STIRRUP', 'REBAR', 'WALL', or 'SLAB'
-    diameter: float
-    spacing: Optional[float]
-    length: float
-    count: int
-    total_length: float
-    weight_per_meter: float  # kg/mt veya kg/m2
-    total_weight: float      # kg
-    description: str
-    mesh_code: Optional[str] = None  # Hasır kodu (Q257/257, R257, vs.)
-    area: Optional[float] = None     # Hasır alanı (m2)
-    width: Optional[float] = None    # Hasır genişliği (cm)
-    height: Optional[float] = None    # Hasır yüksekliği (cm)
+    """Demir hesaplama sonuçlarını saklamak için veri sınıfı"""
+    
+    def __init__(self, type="REBAR", diameter=0, spacing=0, length=0, piece_count=0, 
+                 total_length=0, unit_weight=0, total_weight=0, description=""):
+        """
+        Args:
+            type (str): Demir tipi (REBAR, STIRRUP, MESH, CONNECTION, FOUNDATION)
+            diameter (float): Demir çapı (mm)
+            spacing (float): Demir aralığı (cm)
+            length (float): Demir boyu (cm)
+            piece_count (int): Demir adedi
+            total_length (float): Toplam demir uzunluğu (m)
+            unit_weight (float): Birim ağırlık (kg/m)
+            total_weight (float): Toplam ağırlık (kg)
+            description (str): Açıklama
+        """
+        self.type = type
+        self.diameter = diameter
+        self.spacing = spacing
+        self.length = length
+        self.piece_count = piece_count
+        self.total_length = total_length
+        self.unit_weight = unit_weight
+        self.total_weight = total_weight
+        self.description = description
+        self.timestamp = datetime.now()
+        
+    def __str__(self):
+        return f"{self.description}: {self.total_weight:.2f} kg"
 
 class RebarCalculator:
     def __init__(self):
@@ -90,12 +107,15 @@ class RebarCalculator:
         
         self.pattern_handlers = {
             # Etriye pattern'leri
-            r'[ƒ∅](\d+)\s*Etr\.\s*[lL]\s*=\s*(\d+)ÿ*': self._handle_stirrup_length,
-            r'Etr\.(?:%%C|[ƒ∅])(\d+)/(\d+)': self._handle_stirrup_spacing,
+            r'[ƒØ∅](\d+)\s*Etr\.\s*l=\s*(\d+)': self._handle_stirrup_length,
+            r'Etr\.[ƒØ∅%%C](\d+)/(\d+)': self._handle_stirrup_spacing,
             
             # Boy demiri pattern'leri
-            r'(\d+)[xX](\d+)(?:%%C|[ƒ∅])(\d+)': self._handle_rebar_count,  # 2X13∅20 formatı için
-            r'[lL]\s*=\s*(\d+)': self._handle_length_only  # L=397 formatı için
+            r'(\d+)[xX](\d+)[ƒØ∅%%C](\d+)(?:/(\d+))?(?:\s*[lL]=\s*(\d+))?': self._handle_rebar_count,
+            r'[ƒØ∅%%C](\d+)(?:/(\d+))?(?:\s*[lL]=\s*(\d+))?': self._handle_length_only,
+            
+            # Temel demiri pattern'i
+            r'[ƒØ∅%%C](\d+)/(\d+)\s*[lL]=\s*(\d+)\s*(ALT|ÜST|TEMEL|DONATISI)?': self._handle_foundation_rebar,
         }
         self.current_data = {}
         self.results: List[RebarData] = []
@@ -236,6 +256,21 @@ class RebarCalculator:
     def _handle_length_only(self, match) -> dict:
         return {'length': float(match.group(1))}
 
+    def _handle_foundation_rebar(self, match) -> dict:
+        """Temel demiri pattern'ini işle"""
+        diameter = float(match.group(1))
+        spacing = float(match.group(2))
+        length = float(match.group(3))
+        position = match.group(4) if match.group(4) else "TEMEL"
+        
+        return {
+            'type': 'FOUNDATION',
+            'diameter': diameter,
+            'spacing': spacing,
+            'length': length,
+            'position': position
+        }
+
     def parse_text(self, text: str) -> dict:
         print(f"Parse ediliyor: {text}")  # Debug için
         for pattern, handler in self.pattern_handlers.items():
@@ -269,11 +304,13 @@ class RebarCalculator:
         return total
 
     def calculate_weight(self, diameter: float, total_length: float) -> float:
-        """Toplam ağırlığı hesapla (kg)"""
-        weight_per_meter = self.weight_table.get(diameter, 0)
-        total_meters = total_length / 100  # cm'den metreye çevir
-        total_weight = total_meters * weight_per_meter
-        return total_weight, weight_per_meter
+        """Ağırlık hesabı"""
+        unit_weight = self.weight_table.get(diameter, 0)
+        return unit_weight * total_length / 100  # cm -> m dönüşümü
+
+    def get_unit_weight(self, diameter: float) -> float:
+        """Verilen çapa göre birim ağırlığı döndürür (kg/m)"""
+        return self.weight_table.get(diameter, 0)
 
     def calculate_area(self, width: float, length: float) -> float:
         """Alan hesapla (m2)"""
@@ -877,3 +914,46 @@ class RebarCalculator:
         except Exception as e:
             print(f"Hasır özellikleri alınırken hata: {str(e)}")
             return (0, 0)
+
+    def process_foundation_rebar(self, diameter, spacing, length, width, position="ALT"):
+        """Temel demiri hesapla"""
+        try:
+            logging.info(f"Temel demiri hesaplanıyor: Ø{diameter}/{spacing} L={length} {position}, Genişlik={width} cm")
+            
+            # Adet hesabı (genişlik / aralık + 1)
+            piece_count = int(width / spacing) + 1
+            logging.info(f"Temel demiri adedi: {piece_count} adet")
+            
+            # Toplam boy hesabı (adet * boy)
+            total_length_cm = piece_count * length
+            total_length_m = total_length_cm / 100  # cm -> m dönüşümü
+            logging.info(f"Toplam boy: {total_length_cm} cm = {total_length_m:.2f} m")
+            
+            # Birim ağırlık ve toplam ağırlık hesabı
+            unit_weight = self.get_unit_weight(diameter)
+            total_weight = unit_weight * total_length_m
+            logging.info(f"Birim ağırlık: {unit_weight:.3f} kg/m")
+            logging.info(f"Toplam ağırlık: {total_weight:.2f} kg")
+            
+            # Sonucu oluştur
+            result = RebarData(
+                type="FOUNDATION",
+                diameter=diameter,
+                spacing=spacing,
+                length=length,
+                piece_count=piece_count,
+                total_length=total_length_cm,
+                unit_weight=unit_weight,
+                total_weight=total_weight,
+                description=f"Temel Demiri Ø{diameter}/{spacing} L={length} {position}"
+            )
+            
+            # Sonucu kaydet
+            self.results.append(result)
+            logging.info("Temel demiri hesabı başarıyla tamamlandı")
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Temel demiri hesaplama hatası: {str(e)}")
+            return False

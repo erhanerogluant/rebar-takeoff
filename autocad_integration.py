@@ -1,11 +1,12 @@
 import win32com.client
-from rebar_calculator import RebarCalculator
+from rebar_calculator import RebarCalculator, RebarData
 import time
 import msvcrt
 import re
 import logging
 import os
 from datetime import datetime
+import numpy as np
 
 class AutoCADIntegration:
     # Hasır tipi ağırlık tablosu
@@ -616,3 +617,222 @@ class AutoCADIntegration:
         except Exception as e:
             logging.error(f"Text seçme işlemi sırasında hata oluştu: {str(e)}")
             raise Exception(f"Text seçme işlemi başarısız: {str(e)}")
+
+    def process_foundation_rebar_selection(self):
+        """Temel demiri seçim işlemini yönet"""
+        logging.info("Temel demiri seçim işlemi başlatıldı")
+        
+        try:
+            # İlk dimension seçimi
+            first_dimension = None
+            
+            while True:
+                # 1. Temel demiri text seçimi
+                foundation_text = self.select_entity("Temel demiri textini seçin (örn: ƒ8/20 L= 685 ALT) veya çıkmak için boş seçim yapın")
+                if not foundation_text:
+                    logging.info("Temel demiri seçimi tamamlandı")
+                    break
+                
+                logging.info(f"Seçilen text: {foundation_text}")
+                
+                # Çap, aralık ve boy bilgilerini çıkar
+                # ƒ8/20 L= 685 ALT formatını işle
+                pattern = r'[ƒØ∅](\d+)/(\d+)\s*[Ll]\s*=\s*(\d+)\s*(ALT|ÜST|alt|üst|Üst|Alt)?'
+                match = re.search(pattern, foundation_text)
+                
+                if not match:
+                    logging.warning("Temel demiri text'i işlenemedi")
+                    continue
+                
+                diameter = float(match.group(1))
+                spacing = float(match.group(2))
+                length = float(match.group(3))
+                position = match.group(4) if match.group(4) else "ALT"  # Varsayılan olarak ALT
+                
+                logging.info(f"Temel Demiri Bilgileri:")
+                logging.info(f"- Çap: Ø{diameter}")
+                logging.info(f"- Aralık: {spacing} cm")
+                logging.info(f"- Boy: {length} cm")
+                logging.info(f"- Pozisyon: {position}")
+                
+                # İlk dimension değerini sakla
+                if first_dimension is None:
+                    # 2. Dimension seçimi (sadece ilk seferde)
+                    dimension = self.select_entity("Temel genişliğini seçin (dimension)")
+                    if dimension is None:
+                        logging.warning("Dimension seçimi iptal edildi")
+                        break
+                    
+                    try:
+                        first_dimension = float(dimension)
+                        logging.info(f"- Temel genişliği: {first_dimension} cm")
+                    except ValueError:
+                        logging.error("Geçersiz dimension değeri")
+                        break
+                
+                # Sonraki seçimlerde ilk dimension değerini kullan
+                width = first_dimension
+                logging.info(f"- Temel genişliği (kaydedilmiş): {width} cm")
+                
+                # Hesaplamaları yap
+                success = self.calculator.process_foundation_rebar(diameter, spacing, length, width, position)
+                
+                if success:
+                    logging.info("Temel demiri hesabı başarıyla tamamlandı")
+                else:
+                    logging.warning("Temel demiri hesabı başarısız oldu")
+                
+                # Kullanıcıya devam etmek isteyip istemediğini sor
+                print("\nBaşka temel demiri seçmek için devam edin veya çıkmak için boş seçim yapın")
+                
+            # İşlem bittiğinde özeti göster
+            print("\nTEMEL DEMİRİ HESABI ÖZETİ")
+            self.calculator.show_summary('FOUNDATION')
+            self.calculator.log_summary('FOUNDATION')
+            return True
+                
+        except Exception as e:
+            logging.error(f"Temel demiri seçim hatası: {str(e)}")
+            return False
+
+    def select_multiple_foundation_rebars(self):
+        """Çoklu temel demiri seçimi yap"""
+        try:
+            print("\nÇoklu temel demiri seçimi başlatıldı (Seçimi tamamladıktan sonra ENTER'a basın)")
+            print("Lütfen AutoCAD'de temel demiri textlerini seçin...")
+            
+            # Varsa önceki seçim setini temizle
+            try:
+                old_selection = self.doc.SelectionSets.Item("TempFoundationSel")
+                old_selection.Delete()
+                print("Önceki seçim seti temizlendi")
+            except:
+                print("Önceki seçim seti bulunamadı")
+            
+            print("Yeni seçim seti oluşturuluyor...")
+            selection = self.doc.SelectionSets.Add("TempFoundationSel")
+            
+            # AutoCAD'de seçim komutunu başlat
+            print("Seçim komutu başlatılıyor...")
+            self.doc.Utility.Prompt("\nTemel demiri textlerini seçin ve ENTER'a basın: ")
+            
+            # Seçim yap
+            print("SelectOnScreen bekleniyor...")
+            selection.SelectOnScreen()
+            print(f"Seçim tamamlandı. Seçilen öğe sayısı: {selection.Count}")
+            
+            selected_texts = []
+            
+            # Seçilen her öğe için
+            print("\nSeçilen öğeler kontrol ediliyor...")
+            for i, item in enumerate(selection):
+                try:
+                    print(f"Öğe {i+1} kontrol ediliyor: {item.ObjectName}")
+                    
+                    # Text nesnesini doğrudan kullan
+                    if item.ObjectName == "AcDbText" or item.ObjectName == "AcDbMText":
+                        try:
+                            # COM nesnesini al
+                            text_obj = self.doc.HandleToObject(item.Handle)
+                            text_value = text_obj.TextString.strip()
+                            print(f"Text bulundu: {text_value}")
+                            
+                            # Rengi kırmızı yap (AutoCAD renk kodu: 1 = Kırmızı)
+                            try:
+                                text_obj.TrueColor = self.doc.Application.GetInterfaceObject("AutoCAD.AcCmColor.24")
+                                text_obj.TrueColor.SetRGB(255, 0, 0)  # Kırmızı
+                            except Exception as color_error:
+                                print(f"Renk değiştirme hatası (önemli değil): {str(color_error)}")
+                        
+                            # Text değerini listeye ekle
+                            selected_texts.append(text_value)
+                            
+                        except Exception as text_error:
+                            print(f"Text okuma hatası: {str(text_error)}")
+                            continue
+                        
+                except Exception as e:
+                    print(f"Öğe işlenirken hata: {str(e)}")
+                    continue
+            
+            print("\nSeçim seti temizleniyor...")
+            selection.Delete()
+            
+            return selected_texts
+            
+        except Exception as e:
+            print(f"Çoklu seçim hatası: {str(e)}")
+            return []
+
+    def process_multiple_foundation_rebars(self):
+        """Çoklu temel demiri seçim işlemini yönet"""
+        logging.info("Çoklu temel demiri seçim işlemi başlatıldı")
+        
+        try:
+            # Temel demiri textlerini seç
+            selected_texts = self.select_multiple_foundation_rebars()
+            
+            if not selected_texts:
+                logging.warning("Temel demiri seçimi iptal edildi veya hiç text seçilmedi")
+                return False
+            
+            logging.info(f"Seçilen text sayısı: {len(selected_texts)}")
+            
+            # Dimension seçimi (sadece bir kez)
+            dimension = self.select_entity("Temel genişliğini seçin (dimension)")
+            if dimension is None:
+                logging.warning("Dimension seçimi iptal edildi")
+                return False
+            
+            try:
+                width = float(dimension)
+                logging.info(f"- Temel genişliği: {width} cm")
+            except ValueError:
+                logging.error("Geçersiz dimension değeri")
+                return False
+            
+            # Her bir text için işlem yap
+            success_count = 0
+            for text in selected_texts:
+                logging.info(f"İşlenen text: {text}")
+                
+                # Çap, aralık ve boy bilgilerini çıkar
+                pattern = r'[ƒØ∅](\d+)/(\d+)\s*[Ll]\s*=\s*(\d+)\s*(ALT|ÜST|alt|üst|Üst|Alt)?'
+                match = re.search(pattern, text)
+                
+                if not match:
+                    logging.warning(f"Text işlenemedi: {text}")
+                    continue
+                
+                diameter = float(match.group(1))
+                spacing = float(match.group(2))
+                length = float(match.group(3))
+                position = match.group(4) if match.group(4) else "ALT"  # Varsayılan olarak ALT
+                
+                logging.info(f"Temel Demiri Bilgileri:")
+                logging.info(f"- Çap: Ø{diameter}")
+                logging.info(f"- Aralık: {spacing} cm")
+                logging.info(f"- Boy: {length} cm")
+                logging.info(f"- Pozisyon: {position}")
+                
+                # Hesaplamaları yap
+                if self.calculator.process_foundation_rebar(diameter, spacing, length, width, position):
+                    success_count += 1
+                    logging.info(f"Temel demiri hesabı başarıyla tamamlandı: {text}")
+                else:
+                    logging.warning(f"Temel demiri hesabı başarısız oldu: {text}")
+            
+            # İşlem bittiğinde özeti göster
+            if success_count > 0:
+                print(f"\n{success_count} adet temel demiri hesabı başarıyla tamamlandı.")
+                print("\nTEMEL DEMİRİ HESABI ÖZETİ")
+                self.calculator.show_summary('FOUNDATION')
+                self.calculator.log_summary('FOUNDATION')
+                return True
+            else:
+                logging.warning("Hiçbir temel demiri hesaplanamadı")
+                return False
+                
+        except Exception as e:
+            logging.error(f"Çoklu temel demiri seçim hatası: {str(e)}")
+            return False
