@@ -61,13 +61,40 @@ class AutoCADIntegration:
 
     def __init__(self):
         try:
-            self.acad = win32com.client.Dispatch("AutoCAD.Application")
-            self.doc = self.acad.ActiveDocument
+            # Önce AutoCAD'in açık olup olmadığını kontrol et
+            try:
+                self.acad = win32com.client.GetActiveObject("AutoCAD.Application")
+                print("Mevcut AutoCAD oturumuna bağlandı.")
+            except:
+                # AutoCAD açık değilse yeni bir oturum başlat
+                print("Mevcut AutoCAD oturumu bulunamadı. Yeni oturum başlatılıyor...")
+                self.acad = win32com.client.Dispatch("AutoCAD.Application")
+                self.acad.Visible = True
+                print("Yeni AutoCAD oturumu başlatıldı.")
+            
+            # AutoCAD'in hazır olmasını bekle
+            time.sleep(1)
+            
+            # Aktif dokümanı al
+            try:
+                self.doc = self.acad.ActiveDocument
+            except:
+                # Aktif doküman yoksa yeni bir doküman aç
+                print("Aktif doküman bulunamadı. Yeni doküman açılıyor...")
+                self.acad.Documents.Add()
+                self.doc = self.acad.ActiveDocument
+            
+            # Utility nesnesini al
             self.util = self.doc.Utility
+            
+            # Hesaplayıcıyı başlat
             self.calculator = RebarCalculator()
+            
             print("AutoCAD bağlantısı başarılı!")
         except Exception as e:
             print(f"AutoCAD başlatma hatası: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
             raise
 
     def get_mesh_weight(self, mesh_type):
@@ -168,123 +195,143 @@ class AutoCADIntegration:
         return None
 
     def select_multiple_entities(self, prompt_message):
-        """Çoklu seçim yap ve seçilen textleri kırmızı yap"""
+        """Kullanıcıdan birden fazla öğe seçmesini iste ve seçilen öğelerin listesini döndür"""
         try:
-            print(f"\n{prompt_message} (Seçimi tamamladıktan sonra ENTER'a basın)")
-            print("Lütfen AutoCAD'de seçim yapın...")
+            print(f"\n{prompt_message} (Çıkmak için 'Q' tuşuna basın)")
+            print("Lütfen AutoCAD'de öğeleri seçin...")
             
-            # Varsa önceki seçim setini temizle
+            # Önce mevcut seçim setini temizle
             try:
-                old_selection = self.doc.SelectionSets.Item("TempSel")
+                # Eğer varsa, mevcut seçim setini sil
+                old_selection = self.doc.SelectionSets.Item("TempSelection")
                 old_selection.Delete()
-                print("Önceki seçim seti temizlendi")
             except:
-                print("Önceki seçim seti bulunamadı")
+                # Seçim seti yoksa hata yok
+                pass
             
-            print("Yeni seçim seti oluşturuluyor...")
-            selection = self.doc.SelectionSets.Add("TempSel")
+            # Seçim seti oluştur
+            selection = self.doc.SelectionSets.Add("TempSelection")
             
-            # AutoCAD'de seçim komutunu başlat
-            print("Seçim komutu başlatılıyor...")
-            self.doc.Utility.Prompt("\nSeçim yapın ve ENTER'a basın: ")
+            # Kullanıcıdan seçim yapmasını iste
+            try:
+                selection.SelectOnScreen()
+            except:
+                print("Seçim iptal edildi!")
+                selection.Delete()
+                return []
             
-            # Seçim yap
-            print("SelectOnScreen bekleniyor...")
-            selection.SelectOnScreen()
-            print(f"Seçim tamamlandı. Seçilen öğe sayısı: {selection.Count}")
+            # Seçilen öğeleri işle
+            selected_items = []
             
-            selected_texts = []
-            
-            # Seçilen her öğe için
-            print("\nSeçilen öğeler kontrol ediliyor...")
-            for i, item in enumerate(selection):
+            for i in range(selection.Count):
                 try:
-                    print(f"Öğe {i+1} kontrol ediliyor: {item.ObjectName}")
+                    obj = selection.Item(i)
                     
-                    # Text nesnesini doğrudan kullan
-                    if item.ObjectName == "AcDbText":
+                    # Öğe tipini kontrol et
+                    object_name = obj.ObjectName
+                    print(f"Seçilen öğe tipi: {object_name}")
+                    
+                    # Metin türleri için
+                    if object_name == "AcDbText":
                         try:
-                            # COM nesnesini al
-                            text_obj = self.doc.HandleToObject(item.Handle)
+                            # Önce Text olarak dene
+                            text_obj = self.doc.HandleToObject(obj.Handle)
                             text_value = text_obj.TextString.strip()
-                            print(f"Text bulundu: {text_value}")
-                            
-                            # Rengi kırmızı yap (AutoCAD renk kodu: 1 = Kırmızı)
+                            selected_items.append(text_value)
+                            print(f"Seçilen text: {text_value}")
+                        except:
+                            print("Text değeri okunamadı, alternatif yöntem deneniyor...")
                             try:
-                                text_obj.TrueColor = self.doc.Application.GetInterfaceObject("AutoCAD.AcCmColor.24")
-                                text_obj.TrueColor.SetRGB(255, 0, 0)  # Kırmızı
+                                # Alternatif yöntem
+                                text_value = obj.TextString.strip()
+                                selected_items.append(text_value)
+                                print(f"Seçilen text (alternatif): {text_value}")
                             except:
-                                try:
-                                    text_obj.Color = 1  # AutoCAD kırmızı renk kodu
-                                except:
-                                    try:
-                                        text_obj.EntityColor = 1
-                                    except Exception as color_error:
-                                        print(f"Renk değiştirme hatası (önemli değil): {str(color_error)}")
+                                print("Text değeri okunamadı!")
+                    elif object_name == "AcDbMText":
+                        try:
+                            # Önce MText olarak dene
+                            mtext_obj = self.doc.HandleToObject(obj.Handle)
+                            text_value = mtext_obj.TextString.strip()
+                            selected_items.append(text_value)
+                            print(f"Seçilen mtext: {text_value}")
+                        except:
+                            print("MText değeri okunamadı, alternatif yöntem deneniyor...")
+                            try:
+                                # Alternatif yöntem
+                                text_value = obj.TextString.strip()
+                                selected_items.append(text_value)
+                                print(f"Seçilen mtext (alternatif): {text_value}")
+                            except:
+                                print("MText değeri okunamadı!")
+                    # Dimension için
+                    elif object_name == "AcDbDimension" or "Dimension" in object_name:
+                        try:
+                            dim_value = str(obj.Measurement)
+                            selected_items.append(dim_value)
+                            print(f"Seçilen dimension: {dim_value}")
+                        except:
+                            print(f"Dimension değeri okunamadı: {object_name}")
+                    # Diğer metin benzeri öğeler için
+                    elif hasattr(obj, "TextString"):
+                        try:
+                            text_value = obj.TextString.strip()
+                            selected_items.append(text_value)
+                            print(f"Seçilen diğer metin: {text_value}")
+                        except:
+                            print("Diğer metin değeri okunamadı!")
+                    else:
+                        # Diğer öğeler için (atla)
+                        print(f"Uyarı: Desteklenmeyen öğe tipi seçildi: {object_name}")
                         
-                            # Text değerini listeye ekle
-                            selected_texts.append(text_value)
-                            
-                        except Exception as text_error:
-                            print(f"Text okuma hatası: {str(text_error)}")
-                            continue
-                        
+                        # Alternatif yöntem - manuel giriş
+                        print("Metin değerini manuel olarak girmek ister misiniz? (E/H)")
+                        reply = input()
+                        if reply.upper() == 'E':
+                            text_value = input("Metin değerini girin: ")
+                            if text_value:
+                                selected_items.append(text_value)
+                                print(f"Manuel girilen metin: {text_value}")
                 except Exception as e:
-                    print(f"Öğe işlenirken hata: {str(e)}")
+                    print(f"Öğe işleme hatası: {str(e)}")
                     continue
             
-            print("\nSeçim seti temizleniyor...")
+            # Seçim setini temizle
             selection.Delete()
             
-            if selected_texts:
-                print(f"\nSeçilen text sayısı: {len(selected_texts)}")
-                print("Seçilen textler:")
-                for text in selected_texts:
-                    print(f"- {text}")
+            # Eğer hiç geçerli öğe seçilmediyse, kullanıcıya bilgi ver
+            if not selected_items:
+                print("Uyarı: Hiç geçerli metin öğesi seçilmedi!")
+                print("Lütfen sadece metin (Text veya MText) öğeleri seçin.")
                 
-                # Hasır tipine göre grupla ve hesapla
-                mesh_texts = []
-                for text in selected_texts:
-                    if 'Q' in text or 'R' in text:  # Hasır text'lerini bul
-                        parts = text.split()  # Boşluğa göre ayır
-                        if len(parts) >= 2:  # En az 2 parça olmalı
-                            mesh_type = parts[0]  # Q257/257 veya R257
-                            # Boyutları bul (son parçada olmalı)
-                            for part in parts:
-                                if '/' in part and all(c.isdigit() or c == '/' for c in part):
-                                    dimensions = part
-                                    mesh_texts.append((mesh_type, dimensions))
-                                    break
-                
-                print("\nHasır hesaplamaları başlıyor...")
-                for mesh_type, dimensions in mesh_texts:
-                    try:
-                        width, height = map(float, dimensions.split('/'))
-                        print(f"\nHasır tipi: {mesh_type}")
-                        print(f"Boyutlar: {width}x{height} cm")
-                        
-                        # Hasır hesaplama fonksiyonunu çağır
-                        self.calculator.calculate_mesh(mesh_type, width, height)
-                    except Exception as calc_error:
-                        print(f"Hasır hesaplama hatası: {str(calc_error)}")
-                
-                # AutoCAD'i yenile
-                print("\nAutoCAD güncelleniyor...")
-                self.doc.Application.Update()
-                
-                print("İşlem başarıyla tamamlandı!")
-                return selected_texts
-            
-            else:
-                print("Hiç text seçilemedi!")
-                return None
+                # Kullanıcıya manuel giriş seçeneği sun
+                reply = input("Metin değerini manuel girmek ister misiniz? (E/H): ")
+                if reply.upper() == 'E':
+                    text_value = input("Metin değerini girin: ")
+                    if text_value:
+                        selected_items.append(text_value)
+                        print(f"Manuel girilen metin: {text_value}")
+                else:
+                    # Kullanıcıya yeniden seçim yapma şansı ver
+                    reply = input("Yeniden seçim yapmak ister misiniz? (E/H): ")
+                    if reply.upper() == 'E':
+                        return self.select_multiple_entities(prompt_message)
+        
+            return selected_items
             
         except Exception as e:
             print(f"Seçim hatası: {str(e)}")
-            print("Hata detayları:")
             import traceback
-            traceback.print_exc()
-            return None
+            print(traceback.format_exc())
+            
+            # Hata durumunda da seçim setini temizlemeye çalış
+            try:
+                selection = self.doc.SelectionSets.Item("TempSelection")
+                selection.Delete()
+            except:
+                pass
+            
+            return []
 
     def process_stirrup_selection(self):
         """Etriye seçim işlemini yönet"""
@@ -602,21 +649,111 @@ class AutoCADIntegration:
             print(f"Hesaplama hatası: {str(e)}")
             return False
 
-    def select_texts(self):
-        """
-        AutoCAD'deki text objelerini kullanıcının seçmesini sağlar
-        Returns:
-            list: Seçilen text objelerinin listesi
-        """
+    def select_multiple_texts(self, prompt_message="Textleri seçin"):
+        """Kullanıcıdan birden fazla text seçmesini iste"""
         try:
-            selected_texts = self.select_multiple_entities("Text objelerini seçin")
-            if selected_texts:
-                return selected_texts
-            return []
+            print(f"\n{prompt_message} (Çıkmak için 'Q' tuşuna basın)")
+            print("Lütfen AutoCAD'de birden fazla öğe seçin...")
             
+            # Seçim işlemini başlat
+            self.doc.Utility.Prompt(f"\n{prompt_message}. Seçimi tamamlamak için Enter'a basın.\n")
+            
+            # Önce varsa eski seçim setini temizle
+            try:
+                old_ss = self.doc.SelectionSets.Item("TempSS")
+                old_ss.Delete()
+            except:
+                pass
+            
+            selection_set = self.doc.SelectionSets.Add("TempSS")
+            
+            try:
+                # Filtre olmadan seçim yap
+                selection_set.SelectOnScreen()
+                
+                # Seçilen nesneleri kontrol et
+                if selection_set.Count == 0:
+                    print("Hiçbir nesne seçilmedi.")
+                    return []
+                
+                print(f"Toplam {selection_set.Count} nesne seçildi, text nesneleri filtreleniyor...")
+                
+                # Seçilen textleri al
+                selected_texts = []
+                for i in range(selection_set.Count):
+                    try:
+                        # Nesneyi al
+                        obj = selection_set.Item(i)
+                        
+                        # Nesne tipini kontrol et
+                        obj_type = obj.EntityName if hasattr(obj, 'EntityName') else obj.ObjectName
+                        print(f"Nesne {i+1}: Tip = {obj_type}")
+                        
+                        # Doğrudan Text özelliğini almayı dene
+                        try:
+                            if hasattr(obj, 'TextString'):
+                                text_value = obj.TextString
+                                print(f"  - TextString ile içerik: {text_value}")
+                                selected_texts.append(text_value)
+                                continue
+                            
+                            if hasattr(obj, 'Text'):
+                                text_value = obj.Text
+                                print(f"  - Text ile içerik: {text_value}")
+                                selected_texts.append(text_value)
+                                continue
+                            
+                            # AutoCAD 2021 için özel yöntem
+                            # Text nesnesini farklı şekilde almayı dene
+                            text_value = None
+                            
+                            # Text nesnesi için
+                            if "Text" in obj_type:
+                                # Koordinatları al
+                                try:
+                                    # Utility ile text içeriğini al
+                                    point = obj.InsertionPoint
+                                    text_value = self.doc.Utility.GetEntity("", point)[0].TextString
+                                    print(f"  - Utility ile içerik: {text_value}")
+                                    selected_texts.append(text_value)
+                                    continue
+                                except:
+                                    pass
+                                
+                                # Alternatif yöntem
+                                try:
+                                    # Handle ile text içeriğini al
+                                    handle = obj.Handle
+                                    text_obj = self.doc.HandleToObject(handle)
+                                    if hasattr(text_obj, 'TextString'):
+                                        text_value = text_obj.TextString
+                                        print(f"  - Handle ile içerik: {text_value}")
+                                        selected_texts.append(text_value)
+                                        continue
+                                except:
+                                    pass
+                                
+                            print(f"  - Text içeriği alınamadı")
+                            
+                        except Exception as text_err:
+                            print(f"  - Text değeri alınırken hata: {str(text_err)}")
+                            
+                    except Exception as e:
+                        print(f"Nesne {i+1} işlenirken hata: {str(e)}")
+                        continue
+                
+                print(f"{len(selected_texts)} adet text seçildi.")
+                return selected_texts
+                
+            finally:
+                # Seçim setini temizle
+                selection_set.Delete()
+                
         except Exception as e:
-            logging.error(f"Text seçme işlemi sırasında hata oluştu: {str(e)}")
-            raise Exception(f"Text seçme işlemi başarısız: {str(e)}")
+            print(f"Text seçim hatası: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            return []
 
     def process_foundation_rebar_selection(self):
         """Temel demiri seçim işlemini yönet"""
@@ -836,3 +973,308 @@ class AutoCADIntegration:
         except Exception as e:
             logging.error(f"Çoklu temel demiri seçim hatası: {str(e)}")
             return False
+
+    def process_wall_mesh(self, mahal_bilgisi):
+        """Perde hasırı seçimini işle"""
+        try:
+            print("\nPerde hasırı seçimi başlatıldı...")
+            print(f"Mahal: {mahal_bilgisi}")
+            
+            # Hasır kodunu seç
+            mesh_codes = self.select_multiple_entities("Hasır kodlarını seçin (örn: Q188, Q221, vb.)")
+            if not mesh_codes:
+                print("Hasır kodu seçilmedi veya işlem iptal edildi!")
+                return False
+            
+            # Ebat bilgisi için metin seç
+            dimensions_texts = self.select_multiple_entities("Hasır ebatlarını seçin (örn: 320/215 veya 215x336)")
+            if not dimensions_texts:
+                print("Hasır ebatı seçilmedi veya işlem iptal edildi!")
+                return False
+            
+            # Seçilen hasır kodları ve ebatları işle
+            for mesh_code in mesh_codes:
+                # Hasır kodunu temizle ve işle
+                mesh_code = mesh_code.strip().upper()
+                print(f"Hasır kodu: {mesh_code}")
+                
+                # Çoklu hasır kontrolü (örn: 2xQ317/317)
+                multiplier = 1
+                multiplier_match = re.search(r'(\d+)X', mesh_code)
+                if multiplier_match:
+                    multiplier = int(multiplier_match.group(1))
+                    mesh_code = mesh_code.split('X', 1)[1]  # Çarpan kısmını kaldır
+                
+                print(f"Hasır tipi: {mesh_code}, Çarpan: {multiplier}")
+                
+                # Her hasır kodu için bir ebat seç
+                if dimensions_texts:
+                    dimensions_text = dimensions_texts.pop(0)  # İlk ebatı al ve listeden çıkar
+                else:
+                    print("Uyarı: Hasır ebatı kalmadı, varsayılan değer kullanılacak!")
+                    dimensions_text = "100x100"  # Varsayılan ebat
+                
+                # Ebat bilgisini işle
+                dimensions_match = re.search(r'(\d+)[xX×/](\d+)', dimensions_text)
+                if dimensions_match:
+                    width = float(dimensions_match.group(1))
+                    height = float(dimensions_match.group(2))
+                    area_cm2 = width * height
+                    area_m2 = area_cm2 / 10000
+                    print(f"Seçilen ebat: {width}x{height} cm = {area_cm2} cm² = {area_m2:.2f} m²")
+                else:
+                    # Ebat formatı tanınmadıysa, varsayılan değer kullan
+                    print("Uyarı: Geçersiz ebat formatı, varsayılan değer kullanılacak!")
+                    area_m2 = 1.0  # Varsayılan alan (m²)
+                    area_cm2 = area_m2 * 10000
+                    width = 100
+                    height = 100
+                
+                print(f"Hasır alanı: {area_cm2} cm² = {area_m2:.2f} m²")
+                
+                # Hasır ağırlığını hesapla
+                from mesh_data import MeshData
+                weight_per_m2 = MeshData.get_weight_per_m2(mesh_code)
+                if weight_per_m2 <= 0:
+                    print(f"Uyarı: {mesh_code} için birim ağırlık bulunamadı!")
+                    weight_per_m2 = 3.0  # Varsayılan değer
+                
+                # Çarpan ile toplam ağırlığı hesapla
+                total_weight = area_m2 * weight_per_m2 * multiplier
+                print(f"Birim ağırlık: {weight_per_m2:.2f} kg/m²")
+                print(f"Toplam ağırlık: {total_weight:.2f} kg ({multiplier} kat)")
+                
+                # Hasır çap ve aralık bilgilerini al
+                diameter, spacing = MeshData.get_properties(mesh_code)
+                
+                # Sonucu oluştur
+                from rebar_calculator import RebarData
+                result = RebarData(
+                    type="MESH_WALL",
+                    mesh_code=mesh_code,
+                    diameter=diameter,
+                    spacing=spacing,
+                    area=area_m2,
+                    width=width,
+                    height=height,
+                    unit_weight=weight_per_m2,
+                    total_weight=total_weight,
+                    description=f"Perde Hasırı {multiplier}x{mesh_code} {dimensions_text} - {area_m2:.2f} m²"
+                )
+                
+                # Sonucu kaydet
+                self.calculator.results.append(result)
+            
+            # Metraj raporunu oluştur
+            self.calculator.write_mesh_report(mahal_bilgisi, "WALL")
+            
+            print("\nPerde hasırı hesabı başarıyla tamamlandı!")
+            return True
+            
+        except Exception as e:
+            import traceback
+            print(f"\nPerde hasırı hesaplama hatası: {str(e)}")
+            print(traceback.format_exc())
+            return False
+
+    def process_slab_mesh(self, mahal_bilgisi):
+        """Döşeme hasırı seçimini işle"""
+        try:
+            print("\nDöşeme hasırı seçimi başlatıldı...")
+            print(f"Mahal: {mahal_bilgisi}")
+            
+            # Hasır kodlarını seç
+            mesh_codes = self.select_multiple_entities("Hasır kodlarını seçin (örn: Q188, Q221, vb.)")
+            if not mesh_codes:
+                print("Hasır kodu seçilmedi veya işlem iptal edildi!")
+                return False
+            
+            # Seçilen hasır kodları işle
+            for i, mesh_code_text in enumerate(mesh_codes):
+                # Hasır kodunu temizle ve işle
+                mesh_code_text = mesh_code_text.strip().upper()
+                print(f"Hasır kodu: {mesh_code_text}")
+                
+                # Çoklu hasır kontrolü (örn: 2xQ317/317)
+                multiplier = 1
+                multiplier_match = re.search(r'(\d+)X', mesh_code_text)
+                if multiplier_match:
+                    multiplier = int(multiplier_match.group(1))
+                    mesh_code_text = mesh_code_text.split('X', 1)[1]  # Çarpan kısmını kaldır
+                
+                # R tipi hasır kontrolü ve ebat bilgisi çıkarma
+                is_r_type = False
+                dimensions_match = None
+                
+                if mesh_code_text.startswith('R'):
+                    print(f"R tipi hasır tespit edildi: {mesh_code_text}")
+                    is_r_type = True
+                    
+                    # R tipi hasır formatı: "R257  360/215" -> kod: "R257", ebat: "360/215"
+                    dimensions_match = re.search(r'R\d+\s+(\d+)[/xX×](\d+)', mesh_code_text)
+                    if dimensions_match:
+                        width = float(dimensions_match.group(1))
+                        height = float(dimensions_match.group(2))
+                        print(f"Hasır ebatı tespit edildi: {width}x{height} cm")
+                    
+                    # Hasır kodunu temizle (örn: "R257 360/215" -> "R257")
+                    mesh_code = re.match(r'(R\d+)', mesh_code_text).group(1)
+                else:
+                    # Q tipi hasır için sadece kodu al
+                    mesh_code = mesh_code_text
+                
+                print(f"Hasır tipi: {mesh_code}, Çarpan: {multiplier}")
+                
+                # Ebat bilgisi için metin seç (eğer R tipi hasırdan çıkarılmadıysa)
+                if not dimensions_match:
+                    dimensions_texts = self.select_multiple_entities("Hasır ebatlarını seçin (örn: 320/215 veya 215x336)")
+                    if not dimensions_texts:
+                        print("Hasır ebatı seçilmedi veya işlem iptal edildi!")
+                        return False
+                    
+                    # Her hasır kodu için bir ebat seç
+                    if i < len(dimensions_texts):
+                        dimensions_text = dimensions_texts[i]
+                    else:
+                        print("Uyarı: Hasır ebatı kalmadı, varsayılan değer kullanılacak!")
+                        dimensions_text = "100x100"  # Varsayılan ebat
+                    
+                    # Ebat bilgisini işle
+                    dimensions_match = re.search(r'(\d+)[xX×/](\d+)', dimensions_text)
+                    if dimensions_match:
+                        width = float(dimensions_match.group(1))
+                        height = float(dimensions_match.group(2))
+                    else:
+                        # Ebat formatı tanınmadıysa, varsayılan değer kullan
+                        print("Uyarı: Geçersiz ebat formatı, varsayılan değer kullanılacak!")
+                        width = 100
+                        height = 100
+                
+                # Alan hesapla
+                area_cm2 = width * height
+                area_m2 = area_cm2 / 10000
+                print(f"Seçilen ebat: {width}x{height} cm = {area_cm2} cm² = {area_m2:.2f} m²")
+                print(f"Hasır alanı: {area_cm2} cm² = {area_m2:.2f} m²")
+                
+                # Hasır ağırlığını hesapla
+                from mesh_data import MeshData
+                weight_per_m2 = MeshData.get_weight_per_m2(mesh_code)
+                
+                # R tipi hasırlar için özel birim ağırlık kontrolü
+                if is_r_type and weight_per_m2 <= 0:
+                    # R tipi hasırlar için birim ağırlık tablosu
+                    r_type_weights = {
+                        'R106': 1.33,
+                        'R131': 1.65,
+                        'R158': 1.86,
+                        'R188': 2.10,
+                        'R221': 2.36,
+                        'R257': 2.63,
+                        'R295': 2.93,
+                        'R317': 3.11,
+                        'R335': 3.25,
+                        'R377': 3.58,
+                        'R443': 4.22,
+                        'R513': 4.92,
+                        'R589': 5.66
+                    }
+                    
+                    if mesh_code in r_type_weights:
+                        weight_per_m2 = r_type_weights[mesh_code]
+                        print(f"R tipi hasır için birim ağırlık: {weight_per_m2} kg/m²")
+                    else:
+                        print(f"Uyarı: {mesh_code} için birim ağırlık bulunamadı!")
+                        weight_per_m2 = 3.0  # Varsayılan değer
+                elif weight_per_m2 <= 0:
+                    print(f"Uyarı: {mesh_code} için birim ağırlık bulunamadı!")
+                    weight_per_m2 = 3.0  # Varsayılan değer
+                
+                # Çarpan ile toplam ağırlığı hesapla
+                total_weight = area_m2 * weight_per_m2 * multiplier
+                print(f"Birim ağırlık: {weight_per_m2:.2f} kg/m²")
+                print(f"Toplam ağırlık: {total_weight:.2f} kg ({multiplier} kat)")
+                
+                # Hasır çap ve aralık bilgilerini al
+                diameter, spacing = MeshData.get_properties(mesh_code)
+                
+                # Sonucu oluştur
+                from rebar_calculator import RebarData
+                result = RebarData(
+                    type="MESH_SLAB",
+                    mesh_code=mesh_code,
+                    diameter=diameter,
+                    spacing=spacing,
+                    area=area_m2,
+                    width=width,
+                    height=height,
+                    unit_weight=weight_per_m2,
+                    total_weight=total_weight,
+                    description=f"Döşeme Hasırı {multiplier}x{mesh_code} {width}x{height} - {area_m2:.2f} m²"
+                )
+                
+                # Sonucu kaydet
+                self.calculator.results.append(result)
+            
+            # Metraj raporunu oluştur
+            self.calculator.write_mesh_report(mahal_bilgisi, "SLAB")
+            
+            print("\nDöşeme hasırı hesabı başarıyla tamamlandı!")
+            return True
+            
+        except Exception as e:
+            import traceback
+            print(f"\nDöşeme hasırı hesaplama hatası: {str(e)}")
+            print(traceback.format_exc())
+            
+            # Hata durumunda da seçim setini temizlemeye çalış
+            try:
+                selection = self.doc.SelectionSets.Item("TempSelection")
+                selection.Delete()
+            except:
+                pass
+            
+            return False
+
+    def select_area(self):
+        """Alan seçimi yap ve cm² cinsinden döndür"""
+        try:
+            # Kullanıcıdan alan değerini manuel girmesini iste
+            area_text = self.select_entity("Alan değerini içeren metni seçin (örn: 12.5 m² veya 215x336)")
+            if not area_text:
+                print("Alan değeri seçilmedi!")
+                return 0
+            
+            # Alan değerini çıkar
+            area_match = re.search(r'(\d+[.,]?\d*)\s*m²', area_text)
+            if area_match:
+                # m² cinsinden alan değeri
+                area_m2 = float(area_match.group(1).replace(',', '.'))
+                area_cm2 = area_m2 * 10000  # m² -> cm² dönüşümü
+                print(f"Seçilen alan: {area_m2} m² = {area_cm2} cm²")
+                return area_cm2
+            
+            # Sonra "AxB" formatını kontrol et (örn: 215x336 veya 320/215)
+            dimensions_match = re.search(r'(\d+)[xX×/](\d+)', area_text)
+            if dimensions_match:
+                width = float(dimensions_match.group(1))
+                height = float(dimensions_match.group(2))
+                area_cm2 = width * height
+                area_m2 = area_cm2 / 10000
+                print(f"Seçilen boyutlar: {width}x{height} cm = {area_cm2} cm² = {area_m2:.2f} m²")
+                return area_cm2
+            
+            # Eğer özel formatlar eşleşmezse, sayı olarak dene
+            area_match = re.search(r'(\d+[.,]?\d*)', area_text)
+            if area_match:
+                # Sayı olarak alan değeri (varsayılan birim m²)
+                area_m2 = float(area_match.group(1).replace(',', '.'))
+                area_cm2 = area_m2 * 10000  # m² -> cm² dönüşümü
+                print(f"Seçilen alan: {area_m2} m² = {area_cm2} cm²")
+                return area_cm2
+            
+            print("Geçerli bir alan değeri bulunamadı!")
+            return 0
+            
+        except Exception as e:
+            print(f"Alan seçim hatası: {str(e)}")
+            return 0

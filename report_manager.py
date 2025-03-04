@@ -6,6 +6,7 @@ class ReportManager:
         self.current_date = datetime.now().strftime("%Y-%m-%d")
         self.report_dir = os.path.join(os.getcwd(), f"metraj_raporlari_{self.current_date}")
         os.makedirs(self.report_dir, exist_ok=True)
+        self.reports = {}
         
     def write_report(self, results):
         """Metraj raporu oluştur"""
@@ -80,3 +81,34 @@ class ReportManager:
         except Exception as e:
             print(f"Rapor oluşturma hatası: {str(e)}")
             return False 
+
+    def add_report(self, report_type, mahal, items, total_weight):
+        """Yeni rapor ekle"""
+        if report_type not in self.reports:
+            self.reports[report_type] = []
+        
+        self.reports[report_type].append({
+            'mahal': mahal,
+            'items': items,
+            'total_weight': total_weight
+        })
+    
+    def get_reports(self, report_type=None):
+        """Raporları getir"""
+        if report_type:
+            return self.reports.get(report_type, [])
+        return self.reports
+    
+    def get_total_weight(self, report_type=None):
+        """Toplam ağırlığı hesapla"""
+        total = 0
+        
+        if report_type:
+            for report in self.reports.get(report_type, []):
+                total += report['total_weight']
+        else:
+            for reports in self.reports.values():
+                for report in reports:
+                    total += report['total_weight']
+        
+        return total 

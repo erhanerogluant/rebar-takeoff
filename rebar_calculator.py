@@ -14,7 +14,7 @@ class RebarData:
     """Demir hesaplama sonuçlarını saklamak için veri sınıfı"""
     
     def __init__(self, type="REBAR", diameter=0, spacing=0, length=0, piece_count=0, 
-                 total_length=0, unit_weight=0, total_weight=0, description=""):
+                 total_length=0, unit_weight=0, total_weight=0, description="", width=0, height=0, area=0, mesh_code=""):
         """
         Args:
             type (str): Demir tipi (REBAR, STIRRUP, MESH, CONNECTION, FOUNDATION)
@@ -26,6 +26,10 @@ class RebarData:
             unit_weight (float): Birim ağırlık (kg/m)
             total_weight (float): Toplam ağırlık (kg)
             description (str): Açıklama
+            width (float): Hasır genişliği (cm)
+            height (float): Hasır yüksekliği (cm)
+            area (float): Hasır alanı (m²)
+            mesh_code (str): Hasır kodu (Q257, R257, vb.)
         """
         self.type = type
         self.diameter = diameter
@@ -37,6 +41,10 @@ class RebarData:
         self.total_weight = total_weight
         self.description = description
         self.timestamp = datetime.now()
+        self.width = width
+        self.height = height
+        self.area = area
+        self.mesh_code = mesh_code
         
     def __str__(self):
         return f"{self.description}: {self.total_weight:.2f} kg"
@@ -518,54 +526,106 @@ class RebarCalculator:
     def process_wall_mesh(self, mesh_text: str, dimensions_text: str) -> bool:
         """Perde hasır hesabını yap"""
         try:
-            # Hasır tipi işleme
-            match = re.search(r'(\d+)[xX]([QR]\d+(?:/\d+)?)', mesh_text)
-            if match:
-                count = int(match.group(1))
-                mesh_code = match.group(2)
-                
-                # Boyutlar işleme
-                dim_match = re.search(r'(\d+)[xX](\d+)', dimensions_text)
-                if dim_match:
-                    width = float(dim_match.group(1))
-                    length = float(dim_match.group(2))
-                    
-                    area = self.calculate_area(width, length)
-                    weight_per_m2 = self.mesh_types.get(mesh_code, 0)
-                    total_weight = area * count * weight_per_m2
-                    
-                    new_result = RebarData(
-                        type='WALL',
-                        diameter=0,  # Hasır için çap kullanılmıyor
-                        spacing=None,
-                        length=length,
-                        count=count,
-                        total_length=0,  # Hasır için boy yerine alan kullanılıyor
-                        weight_per_meter=weight_per_m2,  # kg/m2
-                        total_weight=total_weight,
-                        description=f"Perde Hasır {count}x{mesh_code} ({width}x{length})",
-                        mesh_code=mesh_code,
-                        area=area * count,
-                        width=width
-                    )
-                    
-                    self.results.append(new_result)
-                    print(f"\nPerde hasır hesabı tamamlandı:")
-                    print(f"- Tip: {count}x{mesh_code}")
-                    print(f"- Boyutlar: {width}x{length} cm")
-                    print(f"- Alan: {area:.2f} m2")
-                    print(f"- Toplam Alan: {area * count:.2f} m2")
-                    print(f"- Birim Ağırlık: {weight_per_m2:.2f} kg/m2")
-                    print(f"- Toplam Ağırlık: {total_weight:.2f} kg")
-                    
-                    # Sonucu logla
-                    self.log_calculation('WALL', f"{mesh_text} - {dimensions_text}", new_result)
-                    return True
-                    
-            return False
+            print(f"Perde hasır hesabı başladı: '{mesh_text}', Ebat: '{dimensions_text}'")
+            
+            # Boşlukları temizle
+            mesh_text = mesh_text.strip()
+            dimensions_text = dimensions_text.strip()
+            
+            # Debug için regex çalışması
+            print(f"Regex kontrol - Mesh text: '{mesh_text}'")
+            
+            # Adet ve mesh kodu tespiti
+            count_match = re.search(r'^(\d+)[xX]', mesh_text)
+            if count_match:
+                count = int(count_match.group(1))
+                print(f"Adet bulundu: {count}")
+            else:
+                count = 1
+                print("Adet bulunamadı, varsayılan: 1")
+            
+            # Q kodu tespiti
+            mesh_code_match = re.search(r'[QR](\d{3})', mesh_text)
+            if mesh_code_match:
+                mesh_number = mesh_code_match.group(1)
+                mesh_type_prefix = 'Q' if 'Q' in mesh_text else 'R'
+                mesh_code = f"{mesh_type_prefix}{mesh_number}"
+                print(f"Hasır kodu bulundu: {mesh_code}")
+            else:
+                print(f"Hasır kodu bulunamadı: {mesh_text}")
+                return False
+            
+            # Ebat formatı: "215x267" şeklinde
+            print(f"Regex kontrol - Dimensions text: '{dimensions_text}'")
+            dim_match = re.search(r'(\d+)[xX](\d+)', dimensions_text)
+            if dim_match:
+                width = float(dim_match.group(1))
+                height = float(dim_match.group(2))
+                print(f"Ebat bulundu: {width}x{height} cm")
+            else:
+                print(f"Ebat bulunamadı: {dimensions_text}")
+                return False
+            
+            # Birim ağırlık kontrolü
+            print(f"Mesh kodunu kontrol ediyorum: {mesh_code}")
+            
+            # Hasır özelliklerini al
+            mesh_properties = self.get_mesh_properties(mesh_code)
+            if not mesh_properties:
+                print(f"UYARI: {mesh_code} için özellikler bulunamadı!")
+                return False
+            
+            # Birim ağırlığı al
+            weight_per_m2 = self.mesh_types.get(mesh_code, 0)
+            if weight_per_m2 == 0:
+                print(f"UYARI: {mesh_code} için ağırlık bilgisi bulunamadı!")
+                # Varsayılan değerler ekleyelim
+                weight_per_m2 = 5.0  # Varsayılan değer
+                print(f"Varsayılan ağırlık kullanılıyor: {weight_per_m2} kg/m²")
+            else:
+                print(f"Ağırlık bulundu: {weight_per_m2} kg/m²")
+            
+            # Alan ve ağırlık hesapla
+            area = (width * height) / 10000  # m²
+            total_weight = area * count * weight_per_m2  # kg
+            
+            print(f"Hesaplama: Alan={area:.2f}m², Birim Ağırlık={weight_per_m2}kg/m², Toplam={total_weight:.2f}kg")
+            
+            # Sonuç objesi oluştur
+            result = RebarData(
+                type='MESH_WALL',
+                diameter=mesh_properties[0] if mesh_properties else 0,
+                spacing=mesh_properties[1] if mesh_properties else 150,
+                length=height,
+                piece_count=count,  # count yerine piece_count kullanılmalı
+                total_length=0,
+                unit_weight=weight_per_m2,  # weight_per_meter yerine unit_weight kullanılmalı
+                total_weight=total_weight,
+                description=f"{count}x{mesh_code} {width}x{height}",
+                mesh_code=mesh_code,
+                width=width,
+                height=height,
+                area=area * count
+            )
+            
+            self.results.append(result)
+            
+            # Log mesajı
+            print(f"\nPerde Hasır Hesaplama Sonucu:")
+            print(f"- Tip: {mesh_code}")
+            print(f"- Adet: {count}")
+            print(f"- Boyutlar: {width}×{height} cm")
+            print(f"- Alan: {area:.2f} m²")
+            print(f"- Toplam Alan: {area * count:.2f} m²")
+            print(f"- Birim Ağırlık: {weight_per_m2:.2f} kg/m²")
+            print(f"- Toplam Ağırlık: {total_weight:.2f} kg")
+            
+            return True
             
         except Exception as e:
-            print(f"Hata: {str(e)}")
+            print(f"Perde hasır hesaplama hatası: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
             return False
 
     def process_slab_mesh(self, mesh_text: str) -> bool:
@@ -957,3 +1017,86 @@ class RebarCalculator:
         except Exception as e:
             logging.error(f"Temel demiri hesaplama hatası: {str(e)}")
             return False
+
+    def write_mesh_report(self, mahal_bilgisi, mesh_type):
+        """Hasır metraj raporunu oluştur"""
+        try:
+            # Rapor klasörünü oluştur
+            import os
+            import datetime
+            
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d")
+            report_dir = f"metraj_raporlari_{timestamp}"
+            
+            if not os.path.exists(report_dir):
+                os.makedirs(report_dir)
+            
+            # Dosya adını belirle
+            if mesh_type == "WALL":
+                filename = "perde_hasirlari.txt"
+                title = "PERDE HASIR DONATISI METRAJ RAPORU"
+            else:  # SLAB
+                filename = "doseme_hasirlari.txt"
+                title = "DÖŞEME HASIR DONATISI METRAJ RAPORU"
+            
+            filepath = os.path.join(report_dir, filename)
+            
+            # Hasır sonuçlarını filtrele
+            mesh_results = []
+            for result in self.results:
+                if mesh_type == "WALL" and result.type == "MESH_WALL":
+                    mesh_results.append(result)
+                elif mesh_type == "SLAB" and result.type == "MESH_SLAB":
+                    mesh_results.append(result)
+            
+            # Raporu oluştur
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write("=" * 70 + "\n")
+                f.write(title + "\n")
+                f.write(f"Tarih: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}\n")
+                f.write(f"Mahal: {mahal_bilgisi}\n")
+                f.write("=" * 70 + "\n\n")
+                
+                f.write("Hasır Detayları:\n")
+                f.write("-" * 70 + "\n")
+                
+                # Başlık satırı
+                if mesh_type == "WALL":
+                    f.write(f"{'Kod':<10} {'Çap/Aralık':<15} {'Alan (m²)':<15} {'Birim Ağırlık':<15} {'Toplam Ağırlık':<15}\n")
+                else:  # SLAB - Döşeme hasırları için ebat bilgisi göster
+                    f.write(f"{'Kod':<10} {'Ebat (cm)':<15} {'Alan (m²)':<15} {'Birim Ağırlık':<15} {'Toplam Ağırlık':<15}\n")
+                
+                f.write("-" * 70 + "\n")
+                
+                # Hasır detayları
+                total_area = 0
+                total_weight = 0
+                
+                for result in mesh_results:
+                    total_area += result.area
+                    total_weight += result.total_weight
+                    
+                    if mesh_type == "WALL":
+                        # Perde hasırları için çap/aralık bilgisi
+                        f.write(f"{result.mesh_code:<10} Ø{result.diameter}/{result.spacing:<8} {result.area:<15.2f} {result.unit_weight:<15.2f} {result.total_weight:<15.2f}\n")
+                    else:
+                        # Döşeme hasırları için ebat bilgisi
+                        ebat = f"{int(result.width)}×{int(result.height)}"
+                        f.write(f"{result.mesh_code:<10} {ebat:<15} {result.area:<15.2f} {result.unit_weight:<15.2f} {result.total_weight:<15.2f}\n")
+                
+                f.write("-" * 70 + "\n\n")
+                
+                # Kategori toplamı
+                f.write("Kategori Toplamı:\n")
+                f.write("=" * 30 + "\n")
+                f.write(f"Toplam Alan: {total_area:.2f} m²\n")
+                f.write(f"Toplam Ağırlık: {total_weight:.2f} kg ({total_weight/1000:.3f} ton)\n")
+            
+            print(f"Metraj raporu oluşturuldu: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            print(f"Metraj raporu oluşturma hatası: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            return None
