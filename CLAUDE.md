@@ -1,24 +1,23 @@
 # CLAUDE.md — Rebar Take-off
 
-AutoCAD çizimlerinden demir metrajı çıkaran Windows masaüstü uygulaması (Python, PyQt6,
-AutoCAD COM, AutoLISP). Ayrıntı: [README.md](README.md).
+Windows desktop tool that produces rebar quantity take-offs from AutoCAD drawings (Python,
+PyQt6, AutoCAD COM, AutoLISP). Details: [README.md](README.md).
 
-**Yeni bir oturumda önce [docs/GECMIS.md](docs/GECMIS.md) dosyasını oku.** Konuşulanlar,
-hangi sürümün neden seçildiği, düzeltilen hatalar ve açık işler orada. Yeni karar ve
-gelişmeleri oraya tarihli olarak (en yeni en üstte) ekle.
+**At the start of a session read [docs/HISTORY.md](docs/HISTORY.md)**: which version was
+chosen and why, what was fixed, open items. Add a dated entry there (newest first) after
+each session.
 
-## Kurallar
-- Kullanıcıyla Türkçe konuş; kod, commit mesajı İngilizce.
-- Hesap değerleri (birim ağırlıklar, hasır tablosu) tek kaynaktan gelir: çap ağırlıkları
-  `RebarCalculator.weight_table`, hasırlar `mesh_data.py`. Tablo dışı değerde tahmin yapma,
-  uyar ve reddet.
-- Metraj sonucunu etkileyen her değişikliğe elle hesaplanmış değerli test ekle.
-- AutoCAD'e bağlanan kodu (`rebar_gui.RebarCalculatorGUI()`, `AutoCADIntegration()`) testte
-  çalıştırma: AutoCAD'i arka planda başlatır.
+## Rules
+- Code, README and commit messages in English.
+- Unit weights come from one place: bar weights from `RebarCalculator.weight_table`, meshes
+  from `mesh_data.py`. Never guess a value that is not in a table; warn and reject.
+- Every change that affects take-off results needs a test with hand-checked values.
+- Do not instantiate code that connects to AutoCAD (`rebar_gui.RebarCalculatorGUI()`,
+  `AutoCADIntegration()`) in tests: it starts AutoCAD in the background.
 
-## Komutlar
+## Commands
 ```bash
-install.bat                                   # .venv + paketler + testler
-run.bat                                       # GUI (AutoCAD açıkken)
+install.bat                                   # .venv + requirements + tests
+run.bat                                       # GUI (with AutoCAD open)
 .venv\Scripts\python -m unittest discover -s tests -v
 ```

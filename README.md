@@ -1,13 +1,9 @@
-# Rebar Take-off (Demir Metrajı)
+# Rebar Take-off
 
 Desktop tool that reads reinforcement (rebar) annotations and dimensions from structural
 AutoCAD drawings and produces rebar quantity take-off reports (length, count and weight per
 diameter, per room or element). Built in 2025 and used on post-earthquake housing projects
-(Hatay, Adıyaman) to replace manual counting.
-
-**Türkçe özet:** AutoCAD statik çizimlerinden demir yazılarını ve ölçüleri okuyup çap bazında
-boy, adet ve ağırlık metrajı çıkaran masaüstü uygulaması. Kurulum aşağıda; geçmiş ve kararlar
-[docs/GECMIS.md](docs/GECMIS.md) içinde.
+(Hatay and Adiyaman, Turkey) to replace manual counting.
 
 ## Install (Windows)
 
@@ -50,7 +46,7 @@ The AutoLISP side is in `autocad/`: load with `APPLOAD`, then run `EXPORTREBAR`,
 | `rebar_gui.py` | PyQt6 window, selection workflow |
 | `autocad_integration.py` | AutoCAD COM connection (`pywin32`), entity selection |
 | `rebar_calculator.py` | Parses rebar notation, computes counts, lengths, weights |
-| `mesh_data.py` | Mesh (hasır) table: kg/m², wire diameter, spacing — the single source |
+| `mesh_data.py` | Mesh table: kg/m², wire diameter, spacing — the single source |
 | `report_manager.py` | Writes take-off reports |
 | `report_watcher.py`, `report_analyzer/` | Collects reports, totals, Excel export |
 
@@ -70,5 +66,5 @@ not covered; it needs a running AutoCAD.
 ## Status
 
 - Based on the last working version (March 2025); earlier versions are in the git log.
-- October 2026: calculation core fixed and covered by tests (see [docs/GECMIS.md](docs/GECMIS.md)).
+- October 2026: calculation core fixed and covered by tests (see [docs/HISTORY.md](docs/HISTORY.md)).
 - Logs and generated reports are not committed (`.gitignore`).
