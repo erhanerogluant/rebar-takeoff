@@ -5,6 +5,7 @@ from .data_models import Report, ReportItem
 import logging
 
 # Loglama yapılandırması
+os.makedirs('logs', exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
