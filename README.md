@@ -20,6 +20,10 @@ cd rebar-takeoff
 install.bat        # creates .venv, installs requirements, runs the tests
 ```
 
+If `install.bat` fails while creating `.venv` (`ensurepip ... returned non-zero exit status`),
+the folder path is probably longer than Windows allows (260 characters): clone to a shorter
+path, or enable long paths in Windows.
+
 Or by hand:
 
 ```bash
