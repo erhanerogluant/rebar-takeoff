@@ -30,8 +30,23 @@ python -m venv .venv
 .venv\Scripts\python report_watcher.py     # report collection and Excel export
 ```
 
+Mesh unit weights (kg/m²), wire diameters and spacings come from one table: `mesh_data.py`.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The tests cover the calculation core (rebar, stirrup, spaced rebar, wall/slab mesh,
+connection rebar, report export) with hand-checked values. AutoCAD selection itself is not
+covered; it needs a running AutoCAD.
+
 ## Status
 
-- Last working version: March 2025. Version history is in the git log.
-- `main.py` is an old example; its stirrup sample fails because the spacing is not parsed.
+- Based on the last working version (March 2025); earlier versions are in the git log.
+- October 2026 fixes in the calculation core: mesh weights now come from `mesh_data.py`
+  (the old table used the cross-section number, e.g. 2.57 instead of 4.03 kg/m² for Q257);
+  rebar texts like `2X13∅20 L=397` and `2x%%C12/15 L=185` are computed; stirrup length and
+  spacing can come from two texts; result records accept both old and new field names.
 - Logs and generated reports are not committed (`.gitignore`).

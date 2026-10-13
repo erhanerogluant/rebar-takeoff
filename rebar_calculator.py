@@ -7,14 +7,16 @@ import logging
 from datetime import datetime
 import os
 from report_manager import ReportManager
+from mesh_data import MeshData
 import numpy as np
 
 @dataclass
 class RebarData:
     """Demir hesaplama sonuçlarını saklamak için veri sınıfı"""
     
-    def __init__(self, type="REBAR", diameter=0, spacing=0, length=0, piece_count=0, 
-                 total_length=0, unit_weight=0, total_weight=0, description="", width=0, height=0, area=0, mesh_code=""):
+    def __init__(self, type="REBAR", diameter=0, spacing=0, length=0, piece_count=0,
+                 total_length=0, unit_weight=0, total_weight=0, description="", width=0, height=0, area=0, mesh_code="",
+                 count=None, weight_per_meter=None):
         """
         Args:
             type (str): Demir tipi (REBAR, STIRRUP, MESH, CONNECTION, FOUNDATION)
@@ -30,7 +32,12 @@ class RebarData:
             height (float): Hasır yüksekliği (cm)
             area (float): Hasır alanı (m²)
             mesh_code (str): Hasır kodu (Q257, R257, vb.)
+            count, weight_per_meter: piece_count ve unit_weight için eski adlar
         """
+        if count is not None:
+            piece_count = count
+        if weight_per_meter is not None:
+            unit_weight = weight_per_meter
         self.type = type
         self.diameter = diameter
         self.spacing = spacing
@@ -46,6 +53,23 @@ class RebarData:
         self.area = area
         self.mesh_code = mesh_code
         
+    # Kodun bir kısmı hâlâ eski adları okuyor
+    @property
+    def count(self):
+        return self.piece_count
+
+    @count.setter
+    def count(self, value):
+        self.piece_count = value
+
+    @property
+    def weight_per_meter(self):
+        return self.unit_weight
+
+    @weight_per_meter.setter
+    def weight_per_meter(self, value):
+        self.unit_weight = value
+
     def __str__(self):
         return f"{self.description}: {self.total_weight:.2f} kg"
 
@@ -70,41 +94,7 @@ class RebarCalculator:
             32: 6.313,
         }
         
-        # Hasır tipleri için birim ağırlık tablosu (kg/m²)
-        self.mesh_types = {
-            'Q106': 1.06,
-            'Q131': 1.31,
-            'Q158': 1.58,
-            'Q188': 1.88,
-            'Q221': 2.21,
-            'Q257': 2.57,
-            'Q295': 2.95,
-            'Q317': 3.17,
-            'Q335': 3.35,
-            'Q377': 3.77,
-            'Q424': 4.24,
-            'Q503': 5.03,
-            'Q513': 5.13,
-            'Q524': 5.24,
-            'Q589': 5.89,
-            'Q636': 6.36,
-            'Q785': 7.85,
-            
-            'R106': 1.06,
-            'R131': 1.31,
-            'R158': 1.58,
-            'R188': 1.88,
-            'R221': 2.21,
-            'R257': 2.57,
-            'R295': 2.95,
-            'R317': 3.17,
-            'R335': 3.35,
-            'R377': 3.77,
-            'R443': 4.43,
-            'R513': 5.13,
-            'R524': 5.24,
-            'R589': 5.89
-        }
+        # Hasır birim ağırlıkları ve çap/aralık bilgisi mesh_data.MeshData'dan gelir
         
         # Hasır standart ebatları (cm)
         self.mesh_dimensions = {
@@ -116,14 +106,14 @@ class RebarCalculator:
         self.pattern_handlers = {
             # Etriye pattern'leri
             r'[ƒØ∅](\d+)\s*Etr\.\s*l=\s*(\d+)': self._handle_stirrup_length,
-            r'Etr\.[ƒØ∅%%C](\d+)/(\d+)': self._handle_stirrup_spacing,
+            r'Etr\.(?:%%C|[ƒØ∅])(\d+)/(\d+)': self._handle_stirrup_spacing,
             
             # Boy demiri pattern'leri
-            r'(\d+)[xX](\d+)[ƒØ∅%%C](\d+)(?:/(\d+))?(?:\s*[lL]=\s*(\d+))?': self._handle_rebar_count,
-            r'[ƒØ∅%%C](\d+)(?:/(\d+))?(?:\s*[lL]=\s*(\d+))?': self._handle_length_only,
+            r'(\d+)[xX](\d+)(?:%%C|[ƒØ∅])(\d+)(?:/(\d+))?(?:\s*[lL]=\s*(\d+))?': self._handle_rebar_count,
+            r'(?:%%C|[ƒØ∅])(\d+)(?:/(\d+))?(?:\s*[lL]=\s*(\d+))?': self._handle_length_only,
             
             # Temel demiri pattern'i
-            r'[ƒØ∅%%C](\d+)/(\d+)\s*[lL]=\s*(\d+)\s*(ALT|ÜST|TEMEL|DONATISI)?': self._handle_foundation_rebar,
+            r'(?:%%C|[ƒØ∅])(\d+)/(\d+)\s*[lL]=\s*(\d+)\s*(ALT|ÜST|TEMEL|DONATISI)?': self._handle_foundation_rebar,
         }
         self.current_data = {}
         self.results: List[RebarData] = []
@@ -262,7 +252,13 @@ class RebarCalculator:
         }
 
     def _handle_length_only(self, match) -> dict:
-        return {'length': float(match.group(1))}
+        # group 1 çap, group 2 aralık, group 3 boy (L=)
+        result = {'diameter': float(match.group(1))}
+        if match.group(2):
+            result['spacing'] = float(match.group(2))
+        if match.group(3):
+            result['length'] = float(match.group(3))
+        return result
 
     def _handle_foundation_rebar(self, match) -> dict:
         """Temel demiri pattern'ini işle"""
@@ -347,6 +343,13 @@ class RebarCalculator:
                 text = text.replace('ÿ', '')
                 length_match = re.search(r'[Ll]\s*=\s*(\d+)', text)
                 if not length_match:
+                    # "Etr.%%C10/8": boyu önceki etriye textinde verilmiş, yalnız aralığı ekle
+                    spacing_match = re.search(r'/(\d+)', text)
+                    if (spacing_match and self.current_data.get('type') == 'STIRRUP'
+                            and self.current_data.get('diameter') == diameter):
+                        self.current_data['spacing'] = float(spacing_match.group(1))
+                        print(f"Etriye aralığı eklendi: {self.current_data}")
+                        return True
                     print("Boy bilgisi bulunamadı!")
                     return False
                 length = float(length_match.group(1))
@@ -371,10 +374,63 @@ class RebarCalculator:
                 
                 print(f"Etriye bilgileri kaydedildi: {self.current_data}")
                 return True
-                
+
+            return self._process_rebar_text(text)
+
         except Exception as e:
             print(f"Text işleme hatası: {str(e)}")
             return False
+
+    # Çap işareti: %%C (AutoCAD), ƒ (eski fontlar), Ø, ∅
+    DIAMETER_MARK = r'(?:%%[Cc]|[ƒØ∅])'
+
+    def _process_rebar_text(self, text: str) -> bool:
+        """Boy demiri texti: "2X13∅20 L=397" (adet belli) veya "2x%%C12/15 L=185" (aralıklı)"""
+        match = re.search(
+            r'(?:(\d+)\s*[xX]\s*)?(\d+)?\s*' + self.DIAMETER_MARK + r'\s*(\d+)(?:\s*/\s*(\d+))?', text)
+        length = self.extract_length(text)
+        if not match or not length:
+            print(f"Boy demiri texti tanınmadı (çap ve L= gerekli): {text}")
+            return False
+
+        multiplier = int(match.group(1)) if match.group(1) else 1
+        count = int(match.group(2)) if match.group(2) else None
+        diameter = float(match.group(3))
+        spacing = float(match.group(4)) if match.group(4) else None
+
+        if spacing is not None and count is None:
+            # Adet, seçilecek ölçüden (process_dimension) hesaplanacak
+            self.current_data = {
+                'type': 'SPACED_REBAR',
+                'multiplier': multiplier,
+                'diameter': diameter,
+                'spacing': spacing,
+                'length': length,
+            }
+            print(f"Aralıklı demir kaydedildi, ölçü bekleniyor: {self.current_data}")
+            return True
+
+        if count is None:
+            print(f"Adet veya aralık bulunamadı: {text}")
+            return False
+
+        piece_count = multiplier * count
+        total_length = piece_count * length
+        unit_weight = self.get_unit_weight(diameter)
+        result = RebarData(
+            type='REBAR',
+            diameter=diameter,
+            spacing=spacing or 0,
+            length=length,
+            piece_count=piece_count,
+            total_length=total_length,
+            unit_weight=unit_weight,
+            total_weight=self.calculate_weight(diameter, total_length),
+            description=f"Boy Demiri {multiplier}x{count}Ø{diameter:g} L={length:g}"
+        )
+        self.results.append(result)
+        print(f"Boy demiri hesaplandı: {result}")
+        return True
 
     def process_dimension(self, measurement: float):
         """Etriye hesabını yap"""
@@ -385,12 +441,18 @@ class RebarCalculator:
             if not self.current_data or 'type' not in self.current_data:
                 print("Hata: Etriye verisi bulunamadı!")
                 return False
-            
+
+            if self.current_data['type'] == 'SPACED_REBAR':
+                return self._process_spaced_rebar(measurement)
+
             if self.current_data['type'] == 'STIRRUP':
                 diameter = self.current_data['diameter']
                 length = self.current_data['length']  # Etriye boyu (168 cm)
                 spacing = self.current_data['spacing']  # Aralık (8 cm)
-                
+                if not spacing:
+                    print("Hata: Etriye aralığı yok! Önce aralık textini seçin (örn: Etr.%%C10/8)")
+                    return False
+
                 print(f"- Etriye çapı: Ø{diameter}")
                 print(f"- Etriye boyu: {length} cm")
                 print(f"- Etriye aralığı: {spacing} cm")
@@ -429,6 +491,27 @@ class RebarCalculator:
         except Exception as e:
             print(f"Hesaplama hatası: {str(e)}")
             return False
+
+    def _process_spaced_rebar(self, measurement: float) -> bool:
+        """Aralıklı demir: adet = (ölçü / aralık + 1) × çarpan"""
+        data = self.current_data
+        piece_count = (int(measurement / data['spacing']) + 1) * data['multiplier']
+        total_length = piece_count * data['length']
+        result = RebarData(
+            type='REBAR',
+            diameter=data['diameter'],
+            spacing=data['spacing'],
+            length=data['length'],
+            piece_count=piece_count,
+            total_length=total_length,
+            unit_weight=self.get_unit_weight(data['diameter']),
+            total_weight=self.calculate_weight(data['diameter'], total_length),
+            description=(f"Boy Demiri {data['multiplier']}xØ{data['diameter']:g}/{data['spacing']:g} "
+                         f"L={data['length']:g} ({measurement:g} cm)")
+        )
+        self.results.append(result)
+        print(f"Aralıklı demir hesaplandı: {result}")
+        return True
 
     def export_results(self, filename: str):
         # CSV'ye kaydet
@@ -576,12 +659,11 @@ class RebarCalculator:
                 return False
             
             # Birim ağırlığı al
-            weight_per_m2 = self.mesh_types.get(mesh_code, 0)
+            weight_per_m2 = MeshData.get_weight_per_m2(mesh_code)
             if weight_per_m2 == 0:
-                print(f"UYARI: {mesh_code} için ağırlık bilgisi bulunamadı!")
-                # Varsayılan değerler ekleyelim
-                weight_per_m2 = 5.0  # Varsayılan değer
-                print(f"Varsayılan ağırlık kullanılıyor: {weight_per_m2} kg/m²")
+                # Tahmini ağırlıkla metraj üretme; tabloya eklenmesi gerekiyor
+                print(f"UYARI: {mesh_code} için ağırlık bilgisi bulunamadı (mesh_data.py)!")
+                return False
             else:
                 print(f"Ağırlık bulundu: {weight_per_m2} kg/m²")
             
@@ -643,9 +725,15 @@ class RebarCalculator:
                 count_match = re.search(r'(\d+)[xX]', mesh_text)
                 if count_match:
                     count = int(count_match.group(1))
-            
+            else:
+                print(f"Hasır formatı tanınmadı (örn: Q257/257 450/215): {mesh_text}")
+                return False
+
             area = self.calculate_area(width, length)
-            weight_per_m2 = self.mesh_types.get(mesh_code, 0)
+            weight_per_m2 = MeshData.get_weight_per_m2(mesh_code)
+            if weight_per_m2 == 0:
+                print(f"UYARI: {mesh_code} için ağırlık bilgisi bulunamadı (mesh_data.py)!")
+                return False
             total_weight = area * count * weight_per_m2
             
             new_result = RebarData(
@@ -685,7 +773,7 @@ class RebarCalculator:
         """Ara bağlantı demiri hesabını yap"""
         try:
             # 2X∅12/15 veya 2xƒ8/20 veya ∅8/20 formatları için
-            match = re.search(r'(?:(\d+)[xX])?[ƒ∅%%C](\d+)/(\d+)', text)
+            match = re.search(r'(?:(\d+)[xX])?' + self.DIAMETER_MARK + r'(\d+)/(\d+)', text)
             if match:
                 count_multiplier = int(match.group(1)) if match.group(1) else 1
                 diameter = float(match.group(2))
@@ -706,7 +794,8 @@ class RebarCalculator:
                 
                 # Toplam boy ve ağırlık hesabı
                 total_length = total_count * piece_length  # cm cinsinden
-                total_weight, weight_per_meter = self.calculate_weight(diameter, total_length)
+                weight_per_meter = self.get_unit_weight(diameter)
+                total_weight = self.calculate_weight(diameter, total_length)
                 
                 new_result = RebarData(
                     type='CONNECTION',
@@ -874,7 +963,7 @@ class RebarCalculator:
             area = (width * height) / 10000
             
             # Ağırlık hesabı
-            weight_per_m2 = self.mesh_types.get(mesh_code, 0)
+            weight_per_m2 = MeshData.get_weight_per_m2(mesh_code)
             total_weight = area * weight_per_m2
             
             # Kategori tipini belirle
@@ -923,57 +1012,11 @@ class RebarCalculator:
             return False
 
     def get_mesh_properties(self, mesh_code):
-        """Hasır özelliklerini al"""
-        try:
-            # Q ve R tipi hasırlar için çap ve aralık tablosu
-            mesh_properties = {
-                'Q106': (4.0, 15),  # (çap, aralık)
-                'Q131': (4.5, 15),
-                'Q158': (5.0, 15),
-                'Q188': (5.5, 15),
-                'Q221': (6.0, 15),
-                'Q257': (6.5, 15),
-                'Q295': (7.0, 15),
-                'Q317': (7.2, 15),
-                'Q335': (7.4, 15),
-                'Q377': (7.9, 15),
-                'Q424': (8.4, 15),
-                'Q503': (9.1, 15),
-                'Q513': (9.2, 15),
-                'Q524': (9.3, 15),
-                'Q589': (9.8, 15),
-                'Q636': (10.2, 15),
-                'Q785': (11.4, 15),
-                
-                # R tipi hasırlar için
-                'R106': (4.0, 15),
-                'R131': (4.5, 15),
-                'R158': (5.0, 15),
-                'R188': (5.5, 15),
-                'R221': (6.0, 15),
-                'R257': (6.5, 15),
-                'R295': (7.0, 15),
-                'R317': (7.2, 15),
-                'R335': (7.4, 15),
-                'R377': (7.9, 15),
-                'R443': (8.6, 15),
-                'R513': (9.2, 15),
-                'R524': (9.3, 15),
-                'R589': (9.8, 15)
-            }
-            
-            # Mesh kodunu temizle (Q257/257 -> Q257)
-            clean_code = mesh_code.split('/')[0] if '/' in mesh_code else mesh_code
-            
-            if clean_code in mesh_properties:
-                return mesh_properties[clean_code]
-            else:
-                print(f"Uyarı: {mesh_code} için özellikler bulunamadı!")
-                return (0, 0)  # Varsayılan değerler
-        
-        except Exception as e:
-            print(f"Hasır özellikleri alınırken hata: {str(e)}")
-            return (0, 0)
+        """Hasırın (çap mm, aralık mm) bilgisini döndür; bilinmiyorsa (0, 0)"""
+        properties = MeshData.get_properties(mesh_code)
+        if properties == (0, 0):
+            print(f"Uyarı: {mesh_code} için özellikler bulunamadı!")
+        return properties
 
     def process_foundation_rebar(self, diameter, spacing, length, width, position="ALT"):
         """Temel demiri hesapla"""

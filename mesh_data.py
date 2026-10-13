@@ -113,6 +113,10 @@ class MeshData:
     @classmethod
     def get_mesh_data(cls, mesh_code):
         """Hasır koduna göre veri döndür"""
+        # Önce tam kod (Q257/188 gibi farklı enine teli olan hasırlar ayrı satırda)
+        for table in (cls.Q_TYPE_MESHES, cls.R_TYPE_MESHES, cls.TR_TYPE_MESHES):
+            if mesh_code in table:
+                return table[mesh_code]
         # Kodu temizle (Q257/257 -> Q257)
         clean_code = mesh_code.split('/')[0] if '/' in mesh_code else mesh_code
         
